@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BedDouble, Search, UserCheck, LogOut, Plus } from 'lucide-react';
+import { BedDouble, Search, UserCheck, LogOut, Plus, ArrowRightLeft, ArrowUpRight, Network } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, StatCard, EmptyState } from '../components/ui';
 
 const EMPTY_ADMIT = {
@@ -10,6 +11,7 @@ const EMPTY_ADMIT = {
 };
 
 export default function Admission() {
+  const { user } = useAuth();
   const [admissions, setAdmissions] = useState([]);
   const [beds, setBeds]             = useState([]);
   const [allBeds, setAllBeds]       = useState([]);
@@ -19,10 +21,24 @@ export default function Admission() {
   const [error, setError]           = useState('');
   const [showAdmit, setShowAdmit]   = useState(false);
   const [showDischarge, setShowDischarge] = useState(null);
+  const [showTransfer, setShowTransfer]   = useState(null);
   const [form, setForm]             = useState(EMPTY_ADMIT);
   const [ptSearch, setPtSearch]     = useState('');
   const [saving, setSaving]         = useState(false);
-  const [tab, setTab]               = useState('active'); // active | beds
+  const [tab, setTab]               = useState('active');
+  const [fhirToast, setFhirToast]   = useState('');
+
+  // Transfer form state
+  const [transferType, setTransferType] = useState('internal');
+  const [transferBedId, setTransferBedId] = useState('');
+  const [transferFacility, setTransferFacility] = useState('');
+  const [transferAddress, setTransferAddress] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+
+  const showFhir = (msg) => {
+    setFhirToast(msg);
+    setTimeout(() => setFhirToast(''), 4000);
+  };
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError('');
@@ -53,7 +69,17 @@ export default function Admission() {
   async function handleAdmit(e) {
     e.preventDefault(); setSaving(true); setError('');
     try {
-      await api.admitPatient(form);
+      const admission = await api.admitPatient(form);
+      // Send FHIR ADT A01 message to HIE
+      try {
+        await api.sendADTMessage({
+          admission_id: admission.admission_id,
+          event_type: 'ADMIT',
+          triggered_by: user?.provider_id,
+          destination: 'internal',
+        });
+        showFhir('✅ FHIR ADT A01 (Admit) sent to HIE');
+      } catch { showFhir('⚠️ ADT message failed — patient admitted'); }
       setShowAdmit(false); setForm(EMPTY_ADMIT); setPtSearch(''); loadAll();
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
@@ -65,13 +91,60 @@ export default function Admission() {
     try {
       await api.dischargePatient({
         admission_id: showDischarge.admission_id,
-        discharging_provider_id: providers[0]?.provider_id,
+        discharging_provider_id: user?.provider_id || providers[0]?.provider_id,
         discharge_disposition: fd.get('disposition'),
         discharge_condition: fd.get('condition'),
         discharge_summary: fd.get('summary'),
         follow_up_required: fd.get('followup') === 'on',
       });
+      // Send FHIR ADT A03 (Discharge)
+      try {
+        await api.sendADTMessage({
+          admission_id: showDischarge.admission_id,
+          event_type: 'DISCHARGE',
+          triggered_by: user?.provider_id,
+          destination: 'internal',
+        });
+        showFhir('✅ FHIR ADT A03 (Discharge) sent to HIE');
+      } catch { showFhir('⚠️ FHIR message failed'); }
       setShowDischarge(null); loadAll();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleTransfer(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {
+      if (transferType === 'internal') {
+        if (!transferBedId) { setError('Please select a destination bed.'); setSaving(false); return; }
+        await api.internalTransfer({
+          admission_id: showTransfer.admission_id,
+          to_bed_id: transferBedId,
+          reason: transferReason,
+          ordered_by: user?.provider_id,
+        });
+      } else {
+        if (!transferFacility) { setError('Please enter destination facility name.'); setSaving(false); return; }
+        await api.externalTransfer({
+          admission_id: showTransfer.admission_id,
+          to_facility_name: transferFacility,
+          to_facility_address: transferAddress,
+          reason: transferReason,
+          ordered_by: user?.provider_id,
+        });
+      }
+      // Send FHIR ADT A02 (Transfer)
+      try {
+        await api.sendADTMessage({
+          admission_id: showTransfer.admission_id,
+          event_type: 'TRANSFER',
+          triggered_by: user?.provider_id,
+          destination: transferType === 'internal' ? 'internal' : transferFacility,
+        });
+        showFhir(`✅ FHIR ADT A02 (Transfer) sent to HIE → ${transferType === 'external' ? transferFacility : 'internal'}`);
+      } catch { showFhir('⚠️ FHIR ADT message failed'); }
+      setShowTransfer(null); setTransferBedId(''); setTransferFacility('');
+      setTransferAddress(''); setTransferReason(''); loadAll();
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -90,9 +163,17 @@ export default function Admission() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
+      {/* FHIR Toast */}
+      {fhirToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-800 border border-cyan-500/40 text-cyan-400 text-sm rounded-xl px-5 py-3 shadow-xl">
+          <Network className="w-4 h-4 shrink-0" />
+          {fhirToast}
+        </div>
+      )}
+
       <PageHeader
-        title="Admission Desk"
-        subtitle="Manage patient admissions, bed allocation, and discharges"
+        title="Admission Desk (ADT)"
+        subtitle="Admissions, Discharges & Transfers — FHIR R4 ADT messages sent to HIE automatically"
         actions={
           <button className="btn-primary flex items-center gap-2" onClick={() => setShowAdmit(true)}>
             <Plus className="w-4 h-4" /> Admit Patient
@@ -105,9 +186,9 @@ export default function Admission() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <StatCard label="Active Admissions" value={admissions.length} color="text-cyan-400" />
-        <StatCard label="Available Beds" value={available} color="text-emerald-400" />
-        <StatCard label="Occupied Beds" value={occupied} color="text-red-400" />
-        <StatCard label="In Cleaning" value={cleaning} color="text-amber-400" />
+        <StatCard label="Available Beds"    value={available}         color="text-emerald-400" />
+        <StatCard label="Occupied Beds"     value={occupied}          color="text-red-400" />
+        <StatCard label="In Cleaning"       value={cleaning}          color="text-amber-400" />
       </div>
 
       {/* Tabs */}
@@ -125,7 +206,6 @@ export default function Admission() {
       {loading ? (
         <div className="flex justify-center py-12"><Spinner /></div>
       ) : tab === 'active' ? (
-        /* Admissions table */
         <div className="card p-0 overflow-hidden">
           {admissions.length === 0 ? (
             <EmptyState icon={BedDouble} message="No active admissions" />
@@ -140,7 +220,7 @@ export default function Admission() {
                     <th className="th">Type</th>
                     <th className="th">Doctor</th>
                     <th className="th">Admitted</th>
-                    <th className="th">Action</th>
+                    <th className="th">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,10 +241,16 @@ export default function Admission() {
                       <td className="td text-slate-400 text-xs">{a.attending_doctor || '—'}</td>
                       <td className="td text-slate-500 text-xs">{formatDateTime(a.admitted_at)}</td>
                       <td className="td">
-                        <button className="btn-danger text-xs px-3 py-1.5 flex items-center gap-1"
-                          onClick={() => setShowDischarge(a)}>
-                          <LogOut className="w-3 h-3" /> Discharge
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1"
+                            onClick={() => { setShowTransfer(a); setTransferType('internal'); }}>
+                            <ArrowRightLeft className="w-3 h-3" /> Transfer
+                          </button>
+                          <button className="btn-danger text-xs px-2.5 py-1.5 flex items-center gap-1"
+                            onClick={() => setShowDischarge(a)}>
+                            <LogOut className="w-3 h-3" /> Discharge
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -174,7 +260,6 @@ export default function Admission() {
           )}
         </div>
       ) : (
-        /* Bed grid */
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {allBeds.map(b => (
             <div key={b.bed_id}
@@ -190,7 +275,7 @@ export default function Admission() {
         </div>
       )}
 
-      {/* Admit modal */}
+      {/* ── Admit Modal ─────────────────────────────────────────── */}
       <Modal open={showAdmit} onClose={() => setShowAdmit(false)} title="Admit Patient" width="max-w-2xl">
         <form onSubmit={handleAdmit} className="space-y-5">
           <ErrorBanner message={error} />
@@ -199,7 +284,7 @@ export default function Admission() {
             <p className="section-title">Patient Search</p>
             <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input className="input pl-9" placeholder="Search patient by name or MRN..."
+              <input className="input pl-9" placeholder="Search patient by name or MRN…"
                 value={ptSearch} onChange={e => setPtSearch(e.target.value)} />
             </div>
             {patients.length > 0 && (
@@ -263,18 +348,23 @@ export default function Admission() {
               <label className="label">Chief Complaint</label>
               <input className="input" value={form.chief_complaint}
                 onChange={e => set('chief_complaint', e.target.value)}
-                placeholder="Primary reason for admission..." />
+                placeholder="Primary reason for admission…" />
             </div>
             <div className="col-span-2">
               <label className="label">Provisional Diagnosis</label>
               <input className="input" value={form.diagnosis_primary}
                 onChange={e => set('diagnosis_primary', e.target.value)}
-                placeholder="Provisional / working diagnosis..." />
+                placeholder="Provisional / working diagnosis…" />
             </div>
           </div>
 
+          <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-4 py-2.5 text-xs text-cyan-400">
+            <Network className="w-3.5 h-3.5 shrink-0" />
+            FHIR ADT A01 (Admit) message will be auto-generated and sent to HIE on admission.
+          </div>
+
           <div className="flex gap-3 pt-1">
-            <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving || !form.patient_id}>
+            <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving || !form.patient_id || !form.attending_provider_id}>
               {saving ? <Spinner className="w-4 h-4" /> : <BedDouble className="w-4 h-4" />}
               Admit Patient
             </button>
@@ -283,7 +373,85 @@ export default function Admission() {
         </form>
       </Modal>
 
-      {/* Discharge modal */}
+      {/* ── Transfer Modal ──────────────────────────────────────── */}
+      <Modal open={!!showTransfer} onClose={() => setShowTransfer(null)} title="Transfer Patient" width="max-w-xl">
+        {showTransfer && (
+          <form onSubmit={handleTransfer} className="space-y-4">
+            <ErrorBanner message={error} />
+            <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-slate-200">{showTransfer.patient_name}</p>
+              <p className="text-slate-500 text-xs">{showTransfer.admission_number} · {showTransfer.ward_name} · Bed {showTransfer.bed_number || '—'}</p>
+            </div>
+
+            {/* Transfer type tabs */}
+            <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+              {[
+                { val: 'internal', label: '🏥 Internal Transfer', sub: 'Move to another ward/bed in this hospital' },
+                { val: 'external', label: '🚑 External Transfer', sub: 'Refer to another hospital' },
+              ].map(({ val, label, sub }) => (
+                <button key={val} type="button" onClick={() => setTransferType(val)}
+                  className={`flex-1 text-left px-3 py-2.5 rounded-md transition-all text-sm ${
+                    transferType === val ? 'bg-slate-700 text-slate-100' : 'text-slate-500 hover:text-slate-300'
+                  }`}>
+                  <div className="font-medium">{label}</div>
+                  <div className="text-xs opacity-60 mt-0.5">{sub}</div>
+                </button>
+              ))}
+            </div>
+
+            {transferType === 'internal' ? (
+              <div>
+                <label className="label">Destination Bed *</label>
+                <select className="select" value={transferBedId} onChange={e => setTransferBedId(e.target.value)} required>
+                  <option value="">Select available bed</option>
+                  {beds.filter(b => b.bed_id !== showTransfer.bed_id).map(b => (
+                    <option key={b.bed_id} value={b.bed_id}>
+                      {b.bed_number} · {b.ward_name} ({b.bed_type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="label">Destination Hospital *</label>
+                  <input className="input" value={transferFacility}
+                    onChange={e => setTransferFacility(e.target.value)}
+                    placeholder="e.g. Apollo Hospitals, Mumbai" required />
+                </div>
+                <div>
+                  <label className="label">Hospital Address</label>
+                  <input className="input" value={transferAddress}
+                    onChange={e => setTransferAddress(e.target.value)}
+                    placeholder="Full address (optional)" />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="label">Reason for Transfer</label>
+              <textarea className="input h-20 resize-none" value={transferReason}
+                onChange={e => setTransferReason(e.target.value)}
+                placeholder="Clinical reason / notes for transfer…" />
+            </div>
+
+            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5 text-xs text-amber-400">
+              <Network className="w-3.5 h-3.5 shrink-0" />
+              FHIR ADT A02 (Transfer) message will be auto-sent to HIE on completion.
+            </div>
+
+            <div className="flex gap-3">
+              <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving}>
+                {saving ? <Spinner className="w-4 h-4" /> : <ArrowRightLeft className="w-4 h-4" />}
+                Confirm Transfer
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setShowTransfer(null)}>Cancel</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── Discharge Modal ─────────────────────────────────────── */}
       <Modal open={!!showDischarge} onClose={() => setShowDischarge(null)} title="Discharge Patient">
         {showDischarge && (
           <form onSubmit={handleDischarge} className="space-y-4">
@@ -310,12 +478,16 @@ export default function Admission() {
             <div>
               <label className="label">Discharge Summary</label>
               <textarea name="summary" className="input h-24 resize-none"
-                placeholder="Brief discharge summary..." />
+                placeholder="Brief discharge summary…" />
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
               <input type="checkbox" name="followup" className="rounded" />
               Follow-up required
             </label>
+            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 text-xs text-red-400">
+              <Network className="w-3.5 h-3.5 shrink-0" />
+              FHIR ADT A03 (Discharge) message will be auto-sent to HIE.
+            </div>
             <div className="flex gap-3 pt-1">
               <button type="submit" className="btn-danger flex items-center gap-2" disabled={saving}>
                 {saving ? <Spinner className="w-4 h-4" /> : <LogOut className="w-4 h-4" />}

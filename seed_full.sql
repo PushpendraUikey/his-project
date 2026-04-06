@@ -46,6 +46,8 @@ INSERT INTO beds (bed_id, ward_id, bed_number, bed_type, status) VALUES
   ('b0000001-0000-0000-0000-000000000020','a1000001-0000-0000-0000-000000000007','EM-03','standard','available');
 
 -- ── 3. PROVIDERS ──────────────────────────────────────────
+ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) DEFAULT '$2b$10$UPBPci4kjinbf0SqT/1By.uIQFVg1L2FIW0LwM75XcSwdUjwMwi2S';
+
 INSERT INTO providers (provider_id, provider_code, full_name, specialty, license_number, role) VALUES
   -- Doctors
   ('c0000001-0000-0000-0000-000000000001','DOC-001','Dr. Arjun Mehta',        'Internal Medicine',  'MH-MED-10234', 'doctor'),

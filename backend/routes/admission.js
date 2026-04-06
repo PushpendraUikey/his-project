@@ -167,4 +167,136 @@ router.post('/discharge', async (req, res, next) => {
   } finally { client.release(); }
 });
 
+// ─── Internal Transfer ──────────────────────────────────────
+router.post('/transfer', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { admission_id, to_bed_id, reason, ordered_by } = req.body;
+    if (!admission_id || !to_bed_id) {
+      return res.status(400).json({ error: 'admission_id and to_bed_id required' });
+    }
+
+    // Get current bed
+    const { rows: [admission] } = await client.query(
+      'SELECT bed_id, patient_id FROM admissions WHERE admission_id=$1', [admission_id]
+    );
+
+    const from_bed_id = admission?.bed_id;
+
+    // Release old bed
+    if (from_bed_id) {
+      await client.query(
+        `UPDATE beds SET status='cleaning', status_updated_at=NOW() WHERE bed_id=$1`,
+        [from_bed_id]
+      );
+    }
+
+    // Occupy new bed
+    await client.query(
+      `UPDATE beds SET status='occupied', status_updated_at=NOW() WHERE bed_id=$1`,
+      [to_bed_id]
+    );
+
+    // Update admission bed
+    await client.query(
+      `UPDATE admissions SET bed_id=$1, transfer_type='internal', updated_at=NOW() WHERE admission_id=$2`,
+      [to_bed_id, admission_id]
+    );
+
+    // Log transfer record
+    const { rows: [transfer] } = await client.query(
+      `INSERT INTO patient_transfers (admission_id, transfer_type, from_bed_id, to_bed_id, reason, ordered_by, transfer_status, transferred_at)
+       VALUES ($1,'internal',$2,$3,$4,$5,'completed',NOW()) RETURNING *`,
+      [admission_id, from_bed_id || null, to_bed_id, reason || null, ordered_by || null]
+    );
+
+    // ADT audit
+    await client.query(
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
+       VALUES ($1,'TRANSFER','Internal patient transfer to new bed')`,
+      [admission_id]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Internal transfer completed', transfer });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally { client.release(); }
+});
+
+// ─── External Transfer ──────────────────────────────────────
+router.post('/external-transfer', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { admission_id, to_facility_name, to_facility_address, reason, ordered_by } = req.body;
+    if (!admission_id || !to_facility_name) {
+      return res.status(400).json({ error: 'admission_id and to_facility_name required' });
+    }
+
+    const { rows: [admission] } = await client.query(
+      'SELECT bed_id FROM admissions WHERE admission_id=$1', [admission_id]
+    );
+
+    // Release bed
+    if (admission?.bed_id) {
+      await client.query(
+        `UPDATE beds SET status='cleaning', status_updated_at=NOW() WHERE bed_id=$1`,
+        [admission.bed_id]
+      );
+    }
+
+    // Mark admission as transferred
+    await client.query(
+      `UPDATE admissions SET status='discharged', transfer_type='external',
+       transfer_destination=$1, updated_at=NOW() WHERE admission_id=$2`,
+      [to_facility_name, admission_id]
+    );
+
+    // Log transfer
+    const { rows: [transfer] } = await client.query(
+      `INSERT INTO patient_transfers (admission_id, transfer_type, from_bed_id, to_facility_name, to_facility_address, reason, ordered_by, transfer_status, transferred_at)
+       VALUES ($1,'external',$2,$3,$4,$5,$6,'completed',NOW()) RETURNING *`,
+      [admission_id, admission?.bed_id || null, to_facility_name, to_facility_address || null, reason || null, ordered_by || null]
+    );
+
+    // ADT audit
+    await client.query(
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
+       VALUES ($1,'TRANSFER','External transfer to ' || $2)`,
+      [admission_id, to_facility_name]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: `External transfer to ${to_facility_name} completed`, transfer });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally { client.release(); }
+});
+
+// ─── Fetch transfers for an admission ───────────────────────
+router.get('/transfers/:admissionId', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.*, fb.bed_number AS from_bed, tb.bed_number AS to_bed,
+              fw.ward_name AS from_ward, tw.ward_name AS to_ward,
+              pr.full_name AS ordered_by_name
+       FROM patient_transfers t
+       LEFT JOIN beds fb ON fb.bed_id=t.from_bed_id
+       LEFT JOIN wards fw ON fw.ward_id=fb.ward_id
+       LEFT JOIN beds tb ON tb.bed_id=t.to_bed_id
+       LEFT JOIN wards tw ON tw.ward_id=tb.ward_id
+       LEFT JOIN providers pr ON pr.provider_id=t.ordered_by
+       WHERE t.admission_id=$1
+       ORDER BY t.created_at DESC`,
+      [req.params.admissionId]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 export default router;
+

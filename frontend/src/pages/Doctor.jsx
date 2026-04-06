@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Stethoscope, FlaskConical, ClipboardList, ChevronRight, Plus, AlertCircle } from 'lucide-react';
+import { Stethoscope, FlaskConical, ClipboardList, ChevronRight, Plus, AlertCircle, Network, ArrowRightLeft } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, PriorityBadge } from '../components/ui';
 
 export default function Doctor() {
+  const { user } = useAuth();
   const [patients, setPatients]   = useState([]);
   const [doctors, setDoctors]     = useState([]);
   const [labTests, setLabTests]   = useState([]);
+  const [availBeds, setAvailBeds] = useState([]);
   const [doctorId, setDoctorId]   = useState('');
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
@@ -15,24 +18,41 @@ export default function Doctor() {
   const [ctxLoading, setCtxLoad]  = useState(false);
   const [detailTab, setDetailTab] = useState('overview');
   const [showOrder, setShowOrder] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [fhirToast, setFhirToast] = useState('');
   const [orderForm, setOrderForm] = useState({
     order_type: 'lab', notes: '', priority: 'routine', tests: [],
   });
+  // Transfer form
+  const [txType, setTxType]           = useState('internal');
+  const [txBedId, setTxBedId]         = useState('');
+  const [txFacility, setTxFacility]   = useState('');
+  const [txAddress, setTxAddress]     = useState('');
+  const [txReason, setTxReason]       = useState('');
+
+  const showFhir = (msg) => { setFhirToast(msg); setTimeout(() => setFhirToast(''), 4000); };
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [pts, docs, tests] = await Promise.all([
+      const [pts, docs, tests, beds] = await Promise.all([
         api.getDoctorPatients(doctorId || undefined),
         api.getDoctors(),
         api.getLabTests(),
+        api.getAvailableBeds(),
       ]);
-      setPatients(pts); setDoctors(docs); setLabTests(tests);
-      if (docs.length && !doctorId) setDoctorId(docs[0].provider_id);
+      setPatients(pts); setDoctors(docs); setLabTests(tests); setAvailBeds(beds);
+      if (docs.length && !doctorId) {
+        // If logged-in user is a doctor, pre-select them
+        const myDoc = user?.role === 'doctor'
+          ? docs.find(d => d.provider_id === user.provider_id)
+          : null;
+        setDoctorId(myDoc?.provider_id || docs[0].provider_id);
+      }
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [doctorId]);
+  }, [doctorId, user]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -47,7 +67,7 @@ export default function Doctor() {
   async function submitOrder(e) {
     e.preventDefault(); setSaving(true); setError('');
     try {
-      await api.createOrder({
+      const order = await api.createOrder({
         admission_id: selected.admission_id,
         doctor_id: doctorId,
         ...orderForm,
@@ -56,6 +76,50 @@ export default function Doctor() {
       setOrderForm({ order_type: 'lab', notes: '', priority: 'routine', tests: [] });
       const ctx = await api.getPatientContext(selected.admission_id);
       setContext(ctx);
+      // If lab order was created, no FHIR ORU yet — that fires when results are finalised
+      if (orderForm.order_type === 'lab') {
+        showFhir('🧪 Lab order created. FHIR ORU R01 will be sent when results are finalised.');
+      }
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function submitTransfer(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {
+      if (txType === 'internal') {
+        if (!txBedId) { setError('Please select a destination bed.'); setSaving(false); return; }
+        await api.internalTransfer({
+          admission_id: selected.admission_id,
+          to_bed_id: txBedId,
+          reason: txReason,
+          ordered_by: user?.provider_id || doctorId,
+        });
+      } else {
+        if (!txFacility) { setError('Please enter destination facility.'); setSaving(false); return; }
+        await api.externalTransfer({
+          admission_id: selected.admission_id,
+          to_facility_name: txFacility,
+          to_facility_address: txAddress,
+          reason: txReason,
+          ordered_by: user?.provider_id || doctorId,
+        });
+      }
+      // Send FHIR ADT A02
+      try {
+        await api.sendADTMessage({
+          admission_id: selected.admission_id,
+          event_type: 'TRANSFER',
+          triggered_by: user?.provider_id || doctorId,
+          destination: txType === 'internal' ? 'internal' : txFacility,
+        });
+        showFhir(`✅ FHIR ADT A02 (Transfer) sent to HIE → ${txType === 'external' ? txFacility : 'internal ward'}`);
+      } catch { showFhir('⚠️ FHIR ADT message failed'); }
+      setShowTransfer(false);
+      setTxBedId(''); setTxFacility(''); setTxAddress(''); setTxReason('');
+      // Reload patient list
+      load();
+      setSelected(null); setContext(null);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -75,7 +139,14 @@ export default function Doctor() {
   const flagColor = { H:'text-red-400', HH:'text-red-500', L:'text-blue-400', LL:'text-blue-500', A:'text-amber-400', POS:'text-red-400', NEG:'text-emerald-400', N:'text-emerald-400' };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden relative">
+      {/* FHIR Toast */}
+      {fhirToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-800 border border-cyan-500/40 text-cyan-400 text-sm rounded-xl px-5 py-3 shadow-xl">
+          <Network className="w-4 h-4 shrink-0" />
+          {fhirToast}
+        </div>
+      )}
       {/* Patient list */}
       <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-950 overflow-hidden">
         <div className="px-4 py-4 border-b border-slate-800">
@@ -142,9 +213,14 @@ export default function Doctor() {
                     </p>
                   </div>
                 </div>
-                <button className="btn-primary flex items-center gap-2 text-sm" onClick={() => setShowOrder(true)}>
-                  <Plus className="w-4 h-4" /> Write Order
-                </button>
+                <div className="flex items-center gap-2">
+                  <button className="btn-secondary flex items-center gap-2 text-sm" onClick={() => setShowTransfer(true)}>
+                    <ArrowRightLeft className="w-4 h-4" /> Transfer
+                  </button>
+                  <button className="btn-primary flex items-center gap-2 text-sm" onClick={() => setShowOrder(true)}>
+                    <Plus className="w-4 h-4" /> Write Order
+                  </button>
+                </div>
               </div>
               {context.admission.chief_complaint && (
                 <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-4 text-sm">
@@ -373,6 +449,77 @@ export default function Doctor() {
             <button type="button" className="btn-secondary" onClick={() => setShowOrder(false)}>Cancel</button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Transfer Modal ────────────────────────────────────── */}
+      <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Suggest Patient Transfer" width="max-w-xl">
+        {selected && (
+          <form onSubmit={submitTransfer} className="space-y-4">
+            <ErrorBanner message={error} />
+            <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-slate-200">{selected.patient_name}</p>
+              <p className="text-slate-500 text-xs">{selected.mrn} · Bed {selected.bed_number} · {selected.ward_name}</p>
+            </div>
+
+            <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+              {[
+                { val: 'internal', label: '🏥 Internal Transfer' },
+                { val: 'external', label: '🚑 External Referral' },
+              ].map(({ val, label }) => (
+                <button key={val} type="button" onClick={() => setTxType(val)}
+                  className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    txType === val ? 'bg-slate-700 text-slate-100' : 'text-slate-500 hover:text-slate-300'
+                  }`}>{label}</button>
+              ))}
+            </div>
+
+            {txType === 'internal' ? (
+              <div>
+                <label className="label">Destination Bed *</label>
+                <select className="select" value={txBedId} onChange={e => setTxBedId(e.target.value)} required>
+                  <option value="">Select available bed</option>
+                  {availBeds.map(b => (
+                    <option key={b.bed_id} value={b.bed_id}>{b.bed_number} · {b.ward_name} ({b.bed_type})</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="label">Destination Hospital *</label>
+                  <input className="input" value={txFacility} onChange={e => setTxFacility(e.target.value)}
+                    placeholder="e.g. Apollo Hospitals, Mumbai" required />
+                </div>
+                <div>
+                  <label className="label">Hospital Address</label>
+                  <input className="input" value={txAddress} onChange={e => setTxAddress(e.target.value)}
+                    placeholder="Full address (optional)" />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="label">Clinical Reason for Transfer</label>
+              <textarea className="input h-20 resize-none" value={txReason}
+                onChange={e => setTxReason(e.target.value)}
+                placeholder="Clinical indication / reason for transfer…" />
+            </div>
+
+            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5 text-xs text-amber-400">
+              <Network className="w-3.5 h-3.5 shrink-0" />
+              FHIR ADT A02 (Transfer) message will be auto-sent to HIE on confirmation.
+              {txType === 'external' && ' External bundle includes full patient summary.'}
+            </div>
+
+            <div className="flex gap-3">
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
+                {saving ? <Spinner className="w-4 h-4" /> : <ArrowRightLeft className="w-4 h-4" />}
+                Confirm Transfer
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setShowTransfer(false)}>Cancel</button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

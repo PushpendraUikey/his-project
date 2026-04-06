@@ -1,48 +1,53 @@
 # MediCore HIS — Hospital Information System
+### ADT · LIS · HIE with FHIR R4 / HL7 v3
 
-A full-stack Hospital Information System with 5 role-based UI modules.
-
-## Stack
-- **Frontend** React 18 + Tailwind CSS (Vite)
-- **Backend** Node.js + Express
-- **Database** PostgreSQL 14+ (`his_db`)
+A full-stack Hospital Information System featuring ADT (Admissions/Discharges/Transfers), LIS (Laboratory Information System), and HIE (Health Information Exchange) with FHIR R4 messaging.
 
 ---
 
-## Project Structure
+## Stack
 
-```
-his-project/
-├── backend/
-│   ├── index.js              # Express entry point
-│   ├── db.js                 # pg Pool connection
-│   ├── .env.example          # Copy to .env and fill in DB credentials
-│   └── routes/
-│       ├── registration.js   # Patient CRUD
-│       ├── admission.js      # Admit / discharge / bed management
-│       ├── nurse.js          # Vitals + nursing notes
-│       ├── doctor.js         # Orders + full patient context
-│       └── lab.js            # Specimen collection + result entry
-│
-├── frontend/
-│   ├── vite.config.js        # Dev proxy → :4000
-│   └── src/
-│       ├── main.jsx          # Router entry
-│       ├── index.css         # Tailwind + design tokens
-│       ├── lib/api.js        # All fetch calls centralised
-│       ├── components/
-│       │   ├── Layout.jsx    # Sidebar + nav
-│       │   └── ui.jsx        # Shared components
-│       └── pages/
-│           ├── Registration.jsx
-│           ├── Admission.jsx
-│           ├── Nurse.jsx
-│           ├── Doctor.jsx
-│           └── Lab.jsx
-│
-└── database/
-    └── seed_full.sql         # Full dummy dataset
-```
+| Layer      | Technology                              |
+|------------|----------------------------------------|
+| Frontend   | React 18 + Tailwind CSS (Vite)         |
+| Backend    | Node.js + Express + JWT Auth           |
+| Database   | PostgreSQL 14+                         |
+| Standards  | FHIR R4, HL7 v2 ADT/ORU, LOINC, SNOMED CT |
+
+---
+
+## Features
+
+### 🏥 ADT Module (Admission, Discharge, Transfer)
+- Patient search and fetch from HIS (no re-registration needed)
+- Admit patient → ward and bed assignment → FHIR ADT A01 sent to HIE
+- Internal transfer (change ward/bed) → FHIR ADT A02
+- External transfer (refer to another hospital) → FHIR ADT A02 with destination
+- Discharge → FHIR ADT A03 sent to HIE
+
+### 🧪 LIS Module (Laboratory Information System)
+- Doctor writes lab orders (CBC, LFT, BMP, Troponin, etc.)
+- Lab technician marks specimen collected
+- Results entry with reference ranges and abnormal flags
+- When all tests result → FHIR ORU R01 auto-sent to HIE
+
+### 🔄 HIE Module (Health Information Exchange)
+- Real-time FHIR R4 message log (ADT A01/A02/A03, ORU R01)
+- Interactive JSON viewer for each FHIR Bundle
+- Resources: MessageHeader, Patient, Encounter, Practitioner, Location, DiagnosticReport, ServiceRequest, Observation
+- Inbound FHIR Bundle endpoint (POST /api/hie/receive)
+- FHIR resource endpoints for Patient, Encounter, DiagnosticReport
+
+### 🔐 Role-based Authentication
+
+| Role           | Modules Accessible                | Demo Code |
+|----------------|-----------------------------------|-----------|
+| Doctor         | Doctor's View, Lab, HIE           | DOC-001   |
+| Nurse          | Nurse's Station, Admission, HIE   | NRS-001   |
+| Lab Technician | Laboratory, HIE                   | LAB-001   |
+| Admin          | All modules                       | ADM-001   |
+
+Default demo password: `password123`
 
 ---
 
@@ -51,15 +56,11 @@ his-project/
 ### 1. Database
 
 ```bash
-# Create DB
-psql -U postgres -c "CREATE DATABASE his_db;"
-
-# Run schemas (in order)
-psql -U postgres -d his_db -f schema.sql
-psql -U postgres -d his_db -f additional_schema.sql
-
-# Seed dummy data
-psql -U postgres -d his_db -f database/seed_full.sql
+createdb his_db
+psql his_db < schema.sql
+psql his_db < additional_schema.sql
+psql his_db < seed_full.sql
+psql his_db < backend/migrations/hie_tables.sql
 ```
 
 ### 2. Backend
@@ -67,10 +68,9 @@ psql -U postgres -d his_db -f database/seed_full.sql
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env — set DB_PASSWORD and other values
-
+# Set DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
 npm install
-npm run dev       # Runs on :4000
+npm run dev
 ```
 
 ### 3. Frontend
@@ -78,85 +78,36 @@ npm run dev       # Runs on :4000
 ```bash
 cd frontend
 npm install
-npm run dev       # Runs on :3000, proxies /api → :4000
+npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## Modules
+## FHIR R4 Messages Generated
 
-| Module | Route | Role | Key Features |
-|---|---|---|---|
-| Registration | `/registration` | Front desk | Search patients, register, edit details + insurance |
-| Admission | `/admission` | Admission desk | Admit patient, assign bed, view bed grid, discharge |
-| Nurse's Station | `/nurse` | Nurse | Two-panel: patient list + vitals/notes entry |
-| Doctor's View | `/doctor` | Doctor | Full patient context — vitals, orders, labs, notes |
-| Laboratory | `/lab` | Lab Technician | Manage orders by status, collect specimen, enter results |
-
----
-
-## Dummy Data Loaded
-
-| Entity | Count |
-|---|---|
-| Wards | 7 (General, ICU, Surgical, Maternity, Paediatric, Emergency) |
-| Beds | 20 across all wards |
-| Providers | 13 (6 doctors, 4 nurses, 2 lab techs, 1 admin) |
-| Patients | 10 with realistic clinical scenarios |
-| Admissions | 8 active (ACS, AF, ICU trauma, Typhoid, Maternity, Paediatric, Pre-op surgery, Stroke) |
-| Lab Orders | 6 in various states (pending → resulted) |
-| Lab Results | 5 (Troponin critical, CBC low, LFT elevated, WBC high) |
-| Doctor Orders | 6 |
-| Nursing Notes | 8 |
-| Vital Signs | 13 entries across patients |
+| HL7 Event | Trigger                              | Resources in Bundle                                              |
+|-----------|--------------------------------------|------------------------------------------------------------------|
+| ADT A01   | Admission Desk → Admit               | MessageHeader, Patient, Encounter, Practitioner, Location        |
+| ADT A02   | Transfer (internal or external)      | MessageHeader, Patient, Encounter, Practitioner, Location        |
+| ADT A03   | Admission Desk → Discharge           | MessageHeader, Patient, Encounter (status: finished)             |
+| ORU R01   | Lab → all tests resulted             | MessageHeader, Patient, ServiceRequest, DiagnosticReport, Observation[] |
 
 ---
 
-## API Endpoints
+## Key API Endpoints
 
-### Registration
-```
-GET  /api/registration/patients?q=       Search patients
-GET  /api/registration/patients/:id      Get patient + insurance
-POST /api/registration/patients          Register new patient
-PUT  /api/registration/patients/:id      Update patient
-```
+### HIE / FHIR
+- GET  /api/hie/messages — list FHIR message log
+- GET  /api/hie/stats — ADT/ORU counts
+- POST /api/hie/adt — generate ADT bundle
+- POST /api/hie/lab-result — generate ORU R01 bundle
+- GET  /api/hie/fhir/Patient/:id
+- GET  /api/hie/fhir/Encounter/:id
+- GET  /api/hie/fhir/DiagnosticReport/:id
+- POST /api/hie/receive — receive inbound FHIR Bundle
 
-### Admission
-```
-GET  /api/admission/beds                 Available beds
-GET  /api/admission/beds/all             All beds with status
-GET  /api/admission/providers            Active doctors
-GET  /api/admission/admissions           Active admissions
-POST /api/admission/admit                Admit patient
-POST /api/admission/discharge            Discharge patient
-```
-
-### Nurse
-```
-GET  /api/nurse/admissions               All active admissions
-GET  /api/nurse/vitals/:admissionId      Vitals history
-POST /api/nurse/vitals                   Record vitals
-GET  /api/nurse/notes/:admissionId       Nursing notes
-POST /api/nurse/notes                    Add note
-GET  /api/nurse/nurses                   List nurses
-```
-
-### Doctor
-```
-GET  /api/doctor/patients?doctor_id=     Patient list
-GET  /api/doctor/patient/:admissionId    Full patient context
-POST /api/doctor/orders                  Create order (lab/admit/discharge/transfer)
-GET  /api/doctor/lab-tests               Lab test catalog
-GET  /api/doctor/doctors                 List doctors
-```
-
-### Lab
-```
-GET   /api/lab/orders?status=            Lab orders by status
-PATCH /api/lab/orders/:id/collect        Mark specimen collected
-POST  /api/lab/results                   Enter test result
-GET   /api/lab/technicians               List technicians
-```
+### ADT
+- POST /api/admission/admit
+- POST /api/admission/discharge
+- POST /api/admission/transfer (internal)
+- POST /api/admission/external-transfer

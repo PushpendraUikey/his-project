@@ -7,6 +7,8 @@ import admissionRoutes     from './routes/admission.js';
 import nurseRoutes         from './routes/nurse.js';
 import doctorRoutes        from './routes/doctor.js';
 import labRoutes           from './routes/lab.js';
+import authRoutes          from './routes/auth.js';
+import hieRoutes           from './routes/hie.js';
 
 dotenv.config();
 const app = express();
@@ -20,6 +22,8 @@ app.use('/api/admission',    admissionRoutes);
 app.use('/api/nurse',        nurseRoutes);
 app.use('/api/doctor',       doctorRoutes);
 app.use('/api/lab',          labRoutes);
+app.use('/api/auth',         authRoutes);
+app.use('/api/hie',          hieRoutes);
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));

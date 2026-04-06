@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FlaskConical, CheckCircle, Clock, AlertTriangle, Beaker, Plus } from 'lucide-react';
+import { FlaskConical, CheckCircle, Clock, AlertTriangle, Beaker, Plus, Network } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, PriorityBadge, StatCard } from '../components/ui';
 
 export default function Lab() {
+  const { user } = useAuth();
   const [orders, setOrders]         = useState([]);
   const [technicians, setTechs]     = useState([]);
   const [techId, setTechId]         = useState('');
@@ -12,12 +14,15 @@ export default function Lab() {
   const [error, setError]           = useState('');
   const [selected, setSelected]     = useState(null);
   const [showCollect, setShowCollect] = useState(null);
-  const [showResult, setShowResult] = useState(null); // { order, test }
+  const [showResult, setShowResult] = useState(null);
   const [saving, setSaving]         = useState(false);
+  const [fhirToast, setFhirToast]   = useState('');
   const [resultForm, setResultForm] = useState({
     numeric_value: '', text_value: '', unit: '', reference_range_low: '',
     reference_range_high: '', abnormal_flag: '', is_critical: false,
   });
+
+  const showFhir = (msg) => { setFhirToast(msg); setTimeout(() => setFhirToast(''), 5000); };
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -57,11 +62,25 @@ export default function Lab() {
       });
       setShowResult(null);
       setResultForm({ numeric_value:'', text_value:'', unit:'', reference_range_low:'', reference_range_high:'', abnormal_flag:'', is_critical:false });
-      load();
-      if (selected?.lab_order_id === showResult.order.lab_order_id) {
-        const refreshed = orders.find(o => o.lab_order_id === showResult.order.lab_order_id);
-        if (refreshed) setSelected(refreshed);
+
+      // Refresh orders then check if all tests resulted
+      await load();
+      const refreshed = orders.find(o => o.lab_order_id === showResult.order.lab_order_id);
+      const allDone = refreshed?.tests?.every(t => t.status === 'resulted');
+
+      if (allDone) {
+        // Send FHIR ORU R01 to HIE
+        try {
+          await api.sendLabResultMessage({
+            lab_order_id: showResult.order.lab_order_id,
+            triggered_by: user?.provider_id || techId,
+          });
+          showFhir(`✅ FHIR ORU R01 (Lab Results) sent to HIE — ${showResult.order.order_number}`);
+        } catch { showFhir('⚠️ FHIR ORU R01 failed to send'); }
+      } else {
+        showFhir(`🧪 Result saved — ${refreshed?.tests?.filter(t => t.status === 'resulted').length || '?'} / ${refreshed?.tests?.length || '?'} tests done`);
       }
+
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -81,7 +100,14 @@ export default function Lab() {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden relative">
+      {/* FHIR Toast */}
+      {fhirToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-800 border border-violet-500/40 text-violet-400 text-sm rounded-xl px-5 py-3 shadow-xl">
+          <Network className="w-4 h-4 shrink-0" />
+          {fhirToast}
+        </div>
+      )}
       {/* Left: Order list */}
       <div className="w-96 border-r border-slate-800 flex flex-col bg-slate-950 overflow-hidden">
         <div className="px-4 py-4 border-b border-slate-800">
