@@ -33,12 +33,13 @@ const validatePhone = (phone) => {
   if (!phone || typeof phone !== 'string') return false;
   // Strip spaces, dashes, and other non-digit characters
   const cleaned = phone.replace(/[^\d]/g, '');
-  // Must be 10-15 digits
-  return cleaned.length >= 10 && cleaned.length <= 15;
+  // Must be EXACTLY 10 digits
+  return cleaned.length === 10;
 };
 
 const cleanPhone = (phone) => {
-  return phone.replace(/[^\d]/g, '');
+  if (!phone) return '';
+  return phone.replace(/(?!^\+)[^\d]/g, '');
 };
 
 const validateAddress = (address) => {
@@ -106,7 +107,7 @@ const validatePatientData = (data) => {
   }
 
   if (!validatePhone(data.phone)) {
-    errors.push('phone is required and must be 10-15 digits');
+    errors.push('phone is required and must be 10 digits (or include +91/91 prefix)');
   }
 
   if (!validateAddress(data.address)) {
@@ -128,27 +129,43 @@ const validatePatientData = (data) => {
   return errors;
 };
 
-// GET /patients - Search by MRN, name, phone (limit 50)
+// GET /patients - Search by MRN, name, phone, or general query q (limit 50)
 router.get('/patients', async (req, res) => {
   try {
-    const { mrn, name, phone } = req.query;
-    let query = 'SELECT * FROM patients WHERE 1=1';
+    const { mrn, name, phone, q, unadmitted } = req.query;
+    let query = 'SELECT p.* FROM patients p WHERE 1=1';
     const params = [];
 
-    if (mrn) {
-      query += ' AND mrn ILIKE $' + (params.length + 1);
-      params.push(`%${mrn}%`);
+    if (unadmitted === 'true') {
+      query += ` AND NOT EXISTS (
+        SELECT 1 FROM admissions a 
+        WHERE a.patient_id = p.patient_id AND a.status = 'admitted'
+      )`;
     }
 
-    if (name) {
-      query += ' AND (first_name ILIKE $' + (params.length + 1) + ' OR last_name ILIKE $' + (params.length + 2) + ')';
-      params.push(`%${name}%`, `%${name}%`);
-    }
+    if (q) {
+      const cleanedPhone = cleanPhone(q);
+      query += ' AND (mrn ILIKE $' + (params.length + 1) +
+               ' OR first_name ILIKE $' + (params.length + 2) +
+               ' OR last_name ILIKE $' + (params.length + 3) +
+               ' OR phone LIKE $' + (params.length + 4) + ')';
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${cleanedPhone || q}%`);
+    } else {
+      if (mrn) {
+        query += ' AND mrn ILIKE $' + (params.length + 1);
+        params.push(`%${mrn}%`);
+      }
 
-    if (phone) {
-      const cleanedPhone = cleanPhone(phone);
-      query += ' AND phone LIKE $' + (params.length + 1);
-      params.push(`%${cleanedPhone}%`);
+      if (name) {
+        query += ' AND (first_name ILIKE $' + (params.length + 1) + ' OR last_name ILIKE $' + (params.length + 2) + ')';
+        params.push(`%${name}%`, `%${name}%`);
+      }
+
+      if (phone) {
+        const cleanedPhone = cleanPhone(phone);
+        query += ' AND phone LIKE $' + (params.length + 1);
+        params.push(`%${cleanedPhone}%`);
+      }
     }
 
     query += ' ORDER BY created_at DESC LIMIT 50';
@@ -169,11 +186,11 @@ router.get('/patients/:id', async (req, res) => {
     const query = `
       SELECT
         p.*,
-        COUNT(pv.id) as version_count
+        COUNT(pv.version_id) as version_count
       FROM patients p
-      LEFT JOIN patient_versions pv ON p.id = pv.patient_id
-      WHERE p.id = $1
-      GROUP BY p.id
+      LEFT JOIN patient_versions pv ON p.patient_id = pv.patient_id
+      WHERE p.patient_id = $1
+      GROUP BY p.patient_id
     `;
 
     const result = await pool.query(query, [id]);
@@ -269,13 +286,12 @@ router.post('/patients', async (req, res) => {
         national_id,
         email,
         blood_group,
-        insurance,
         version,
         created_by,
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
       RETURNING *
     `;
 
@@ -290,13 +306,27 @@ router.post('/patients', async (req, res) => {
       national_id ? national_id.replace(/[^\d]/g, '') : null,
       email || null,
       blood_group ? blood_group.toUpperCase() : null,
-      insurance ? JSON.stringify(insurance) : null,
       1,
       created_by || null
     ];
 
     const result = await client.query(insertQuery, values);
     const newPatient = result.rows[0];
+
+    // Check if insurance data is meaningfully provided
+    if (insurance && (insurance.provider_name?.trim() || insurance.policy_number?.trim())) {
+      await client.query(`
+        INSERT INTO patient_insurance (patient_id, provider_name, policy_number, group_number, valid_from, valid_to)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        newPatient.patient_id,
+        insurance.provider_name || 'Unknown',
+        insurance.policy_number || 'Unknown',
+        insurance.group_number || null,
+        insurance.valid_from ? insurance.valid_from : null,
+        insurance.valid_to ? insurance.valid_to : null
+      ]);
+    }
 
     await client.query('COMMIT');
 
@@ -350,7 +380,7 @@ router.put('/patients/:id', async (req, res) => {
     await client.query('BEGIN');
 
     // Fetch current patient to create version snapshot
-    const currentPatientQuery = 'SELECT * FROM patients WHERE id = $1';
+    const currentPatientQuery = 'SELECT * FROM patients WHERE patient_id = $1';
     const currentPatientResult = await client.query(currentPatientQuery, [id]);
 
     if (currentPatientResult.rows.length === 0) {
@@ -376,11 +406,9 @@ router.put('/patients/:id', async (req, res) => {
         national_id,
         email,
         blood_group,
-        insurance,
-        changed_by,
-        changed_at
+        changed_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     `;
 
     const versionValues = [
@@ -396,7 +424,6 @@ router.put('/patients/:id', async (req, res) => {
       currentPatient.national_id,
       currentPatient.email,
       currentPatient.blood_group,
-      currentPatient.insurance,
       updated_by || null
     ];
 
@@ -421,11 +448,10 @@ router.put('/patients/:id', async (req, res) => {
         national_id = $7,
         email = $8,
         blood_group = $9,
-        insurance = $10,
-        version = $11,
-        updated_by = $12,
+        version = $10,
+        updated_by = $11,
         updated_at = NOW()
-      WHERE id = $13
+      WHERE patient_id = $12
       RETURNING *
     `;
 
@@ -439,7 +465,6 @@ router.put('/patients/:id', async (req, res) => {
       national_id ? national_id.replace(/[^\d]/g, '') : null,
       email || null,
       blood_group ? blood_group.toUpperCase() : null,
-      insurance ? JSON.stringify(insurance) : null,
       nextVersion,
       updated_by || null,
       id

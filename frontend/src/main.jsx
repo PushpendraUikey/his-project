@@ -10,6 +10,7 @@ import Admission from './pages/Admission';
 import Nurse from './pages/Nurse';
 import Doctor from './pages/Doctor';
 import Lab from './pages/Lab';
+import Verifier from './pages/Verifier';
 import HIE from './pages/HIE';
 import Admin from './pages/Admin';
 import ChangePassword from './pages/ChangePassword';
@@ -20,6 +21,7 @@ const ROUTE_MAP = {
   nurse:        '/nurse',
   doctor:       '/doctor',
   lab:          '/lab',
+  verifier:     '/verifier',
   hie:          '/hie',
   admin:        '/admin',
 };
@@ -52,6 +54,7 @@ function RoleRedirect() {
     doctor:            '/doctor',
     nurse:             '/nurse',
     lab_technician:    '/lab',
+    verifier:          '/verifier',
     admin:             '/admin',
     registration_desk: '/registration',
     admission_desk:    '/admission',
@@ -89,6 +92,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             } />
             <Route path="lab" element={
               <RequireRole module="lab"><Lab /></RequireRole>
+            } />
+            <Route path="verifier" element={
+              <RequireRole module="verifier"><Verifier /></RequireRole>
             } />
             <Route path="hie" element={
               <RequireRole module="hie"><HIE /></RequireRole>

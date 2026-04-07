@@ -184,7 +184,7 @@ router.post('/discharge', async (req, res, next) => {
 
     if (admission?.bed_id) {
       await client.query(
-        `UPDATE beds SET status='cleaning', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
         [admission.bed_id]
       );
     }
@@ -232,7 +232,7 @@ router.post('/transfer', async (req, res, next) => {
     // Release old bed
     if (from_bed_id) {
       await client.query(
-        `UPDATE beds SET status='cleaning', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
         [from_bed_id]
       );
     }
@@ -243,9 +243,9 @@ router.post('/transfer', async (req, res, next) => {
       [to_bed_id]
     );
 
-    // Update admission bed
+    // Update admission bed and reset discharge_approved
     await client.query(
-      `UPDATE admissions SET bed_id=$1, transfer_type='internal', updated_at=NOW() WHERE admission_id=$2`,
+      `UPDATE admissions SET bed_id=$1, transfer_type='internal', discharge_approved=FALSE, discharge_decision=NULL, updated_at=NOW() WHERE admission_id=$2`,
       [to_bed_id, admission_id]
     );
 
@@ -296,7 +296,7 @@ router.post('/external-transfer', async (req, res, next) => {
     // Release bed
     if (admission?.bed_id) {
       await client.query(
-        `UPDATE beds SET status='cleaning', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
         [admission.bed_id]
       );
     }
@@ -377,6 +377,18 @@ router.get('/admissions/:id/approval-status', async (req, res, next) => {
     }
 
     res.json(approval);
+  } catch (err) { next(err); }
+});
+
+// FEATURE: Manual update of bed status (e.g., dirty to available)
+router.patch('/beds/:id/status', async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    await pool.query(
+      `UPDATE beds SET status=$1, status_updated_at=NOW() WHERE bed_id=$2`,
+      [status, req.params.id]
+    );
+    res.json({ message: `Bed status updated to ${status}` });
   } catch (err) { next(err); }
 });
 

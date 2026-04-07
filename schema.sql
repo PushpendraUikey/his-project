@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS beds (
   ward_id           UUID NOT NULL REFERENCES wards(ward_id) ON DELETE RESTRICT,
   bed_number        VARCHAR(50) NOT NULL,
   bed_type          VARCHAR(50) NOT NULL CHECK (bed_type IN ('standard', 'icu', 'maternity', 'pediatric', 'emergency')),
-  status            VARCHAR(50) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'cleaning', 'maintenance', 'reserved')),
+  status            VARCHAR(50) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'dirty', 'maintenance', 'reserved')),
   status_updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_at        TIMESTAMPTZ DEFAULT NOW(),
   updated_at        TIMESTAMPTZ DEFAULT NOW(),
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS providers (
   full_name          VARCHAR(150) NOT NULL,
   specialty          VARCHAR(100),
   license_number     VARCHAR(100),
-  role               VARCHAR(50) NOT NULL CHECK (role IN ('doctor', 'nurse', 'lab_technician', 'admin', 'registration_desk', 'admission_desk')),
+  role               VARCHAR(50) NOT NULL CHECK (role IN ('doctor', 'nurse', 'lab_technician', 'verifier', 'admin', 'registration_desk', 'admission_desk')),
   is_active          BOOLEAN DEFAULT TRUE,
   password_hash      VARCHAR(255),
   password_must_change BOOLEAN DEFAULT TRUE,
@@ -259,6 +259,18 @@ CREATE INDEX idx_lab_test_code ON lab_test_definitions(test_code);
 CREATE INDEX idx_lab_test_active ON lab_test_definitions(is_active);
 
 -- ============================================================
+-- LOINC CODES TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS loinc_codes (
+  loinc_num TEXT PRIMARY KEY,
+  name TEXT,
+  short_name TEXT,
+  class TEXT
+);
+
+CREATE INDEX idx_loinc_name ON loinc_codes(name);
+
+-- ============================================================
 -- 12. LAB ORDERS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS lab_orders (
@@ -269,7 +281,7 @@ CREATE TABLE IF NOT EXISTS lab_orders (
   ordering_provider_id  UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT,
   ordered_at            TIMESTAMPTZ DEFAULT NOW(),
   priority              VARCHAR(50) NOT NULL DEFAULT 'routine' CHECK (priority IN ('critical', 'stat', 'routine')),
-  order_status          VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (order_status IN ('pending', 'collected', 'processing', 'resulted', 'cancelled')),
+  order_status          VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (order_status IN ('pending', 'collected', 'processing', 'resulted', 'verified', 'cancelled')),
   clinical_notes        TEXT,
   specimen_type         VARCHAR(100),
   collected_at          TIMESTAMPTZ,
@@ -291,8 +303,11 @@ CREATE INDEX idx_lab_order_ordered ON lab_orders(ordered_at DESC);
 CREATE TABLE IF NOT EXISTS lab_order_tests (
   order_test_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lab_order_id         UUID NOT NULL REFERENCES lab_orders(lab_order_id) ON DELETE CASCADE,
-  test_definition_id   UUID NOT NULL REFERENCES lab_test_definitions(test_definition_id) ON DELETE RESTRICT,
-  individual_status    VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (individual_status IN ('pending', 'collected', 'processing', 'resulted', 'cancelled')),
+  test_definition_id   UUID REFERENCES lab_test_definitions(test_definition_id) ON DELETE SET NULL,
+  loinc_code           VARCHAR(50),
+  test_name            VARCHAR(255),
+  machine_id           INTEGER,
+  individual_status    VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (individual_status IN ('pending', 'collected', 'processing', 'resulted', 'verified', 'cancelled')),
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
@@ -324,6 +339,15 @@ CREATE TABLE IF NOT EXISTS lab_results (
 
 CREATE INDEX idx_lab_result_test ON lab_results(order_test_id);
 CREATE INDEX idx_lab_result_critical ON lab_results(is_critical);
+
+-- ============================================================
+-- LAB MACHINES TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS lab_machines (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  type TEXT
+);
 
 -- ============================================================
 -- 15. DOCTOR ORDERS TABLE

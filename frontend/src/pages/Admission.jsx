@@ -59,7 +59,7 @@ export default function Admission() {
   useEffect(() => {
     if (!ptSearch.trim()) { setPatients([]); return; }
     const t = setTimeout(async () => {
-      try { setPatients(await api.searchPatients(ptSearch)); } catch {}
+      try { setPatients(await api.searchPatients(ptSearch, true)); } catch {}
     }, 300);
     return () => clearTimeout(t);
   }, [ptSearch]);
@@ -151,15 +151,22 @@ export default function Admission() {
 
   const available = allBeds.filter(b => b.status === 'available').length;
   const occupied  = allBeds.filter(b => b.status === 'occupied').length;
-  const cleaning  = allBeds.filter(b => b.status === 'cleaning').length;
+  const dirty     = allBeds.filter(b => b.status === 'dirty').length;
 
   const statusColor = {
     available:   'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
     occupied:    'bg-red-500/20 text-red-400 border border-red-500/30',
-    cleaning:    'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+    dirty:       'bg-amber-500/20 text-amber-400 border border-amber-500/30',
     maintenance: 'bg-slate-700 text-slate-400',
     blocked:     'bg-slate-700 text-slate-500',
   };
+
+  async function setBedStatus(bedId, newStatus) {
+    try {
+      await api.updateBedStatus(bedId, newStatus);
+      loadAll();
+    } catch (e) { setError(e.message); }
+  }
 
   // Filter beds based on admission type
   const filteredBeds = form.admission_type === 'emergency'
@@ -210,7 +217,7 @@ export default function Admission() {
         <StatCard label="Active Admissions" value={admissions.length} color="text-cyan-400" />
         <StatCard label="Available Beds"    value={available}         color="text-emerald-400" />
         <StatCard label="Occupied Beds"     value={occupied}          color="text-red-400" />
-        <StatCard label="In Cleaning"       value={cleaning}          color="text-amber-400" />
+        <StatCard label="Dirty Beds"        value={dirty}             color="text-amber-400" />
       </div>
 
       {/* Tabs */}
@@ -317,6 +324,12 @@ export default function Admission() {
                 <div className="text-xs font-medium truncate">{b.patient_name}</div>
               )}
               <div className="text-xs opacity-60 mt-1 capitalize">{b.status}</div>
+              {b.status === 'dirty' && (
+                <button className="mt-2 text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded px-2 py-1 transition-colors w-full"
+                  onClick={() => setBedStatus(b.bed_id, 'available')}>
+                  Mark Clean
+                </button>
+              )}
             </div>
           ))}
         </div>

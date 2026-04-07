@@ -33,7 +33,8 @@ async function req(path, options = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Request failed');
+    const errorMsg = err.error || (err.errors ? err.errors.join('\\n') : 'Request failed');
+    throw new Error(errorMsg);
   }
   return res.json();
 }
@@ -55,7 +56,12 @@ export const api = {
   me:             ()     => req('/auth/me'),
 
   // ── Registration (PAS) ───────────────────────────────────
-  searchPatients:    (q) => req(`/registration/patients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  searchPatients:    (q, unadmitted = false) => {
+    let url = `/registration/patients?`;
+    if (q) url += `q=${encodeURIComponent(q)}&`;
+    if (unadmitted) url += `unadmitted=true`;
+    return req(url.endsWith('?') || url.endsWith('&') ? url.slice(0, -1) : url);
+  },
   getPatient:        (id) => req(`/registration/patients/${id}`),
   getPatientVersions:(id) => req(`/registration/patients/${id}/versions`),
   createPatient:     (data) => req('/registration/patients', { method: 'POST', body: data }),
@@ -72,6 +78,7 @@ export const api = {
   internalTransfer:      (data) => req('/admission/transfer', { method: 'POST', body: data }),
   externalTransfer:      (data) => req('/admission/external-transfer', { method: 'POST', body: data }),
   getTransfers:          (admissionId) => req(`/admission/transfers/${admissionId}`),
+  updateBedStatus:       (id, status) => req(`/admission/beds/${id}/status`, { method: 'PATCH', body: { status } }),
 
   // ── Nurse ────────────────────────────────────────────────
   getNurseAdmissions: () => req('/nurse/admissions'),
@@ -87,14 +94,23 @@ export const api = {
   createOrder:        (data) => req('/doctor/orders', { method: 'POST', body: data }),
   getLabTests:        () => req('/doctor/lab-tests'),
   getDoctors:         () => req('/doctor/doctors'),
+  searchLOINC:        (q) => req(`/loinc?q=${encodeURIComponent(q)}`),
   approveDischarge:   (data) => req('/doctor/approve-discharge', { method: 'POST', body: data }),
   getPendingApprovals:(doctorId) => req(`/doctor/pending-approvals${doctorId ? `?doctor_id=${doctorId}` : ''}`),
 
   // ── Lab (LIS) ────────────────────────────────────────────
   getLabOrders:    (status) => req(`/lab/orders${status ? `?status=${status}` : ''}`),
   collectSpecimen: (id, data) => req(`/lab/orders/${id}/collect`, { method: 'PATCH', body: data }),
+  processOnMachine:(id, data) => req(`/lab/orders/${id}/process`, { method: 'POST', body: data }),
   enterResult:     (data) => req('/lab/results', { method: 'POST', body: data }),
   getTechnicians:  () => req('/lab/technicians'),
+  getLabMachines:  () => req('/lab/machines'),
+
+  // ── Verifier ─────────────────────────────────────────────
+  getVerifiers:       () => req('/verifier/verifiers'),
+  getVerifierOrders:  () => req('/verifier/orders'),
+  approveVerifierOrder:(id, data) => req(`/verifier/orders/${id}/approve`, { method: 'POST', body: data }),
+  rejectVerifierOrder: (id, data) => req(`/verifier/orders/${id}/reject`, { method: 'POST', body: data }),
 
   // ── Admin ────────────────────────────────────────────────
   getProviders:       (params = {}) => {

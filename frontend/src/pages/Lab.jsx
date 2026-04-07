@@ -8,6 +8,7 @@ export default function Lab() {
   const { user } = useAuth();
   const [orders, setOrders]         = useState([]);
   const [technicians, setTechs]     = useState([]);
+  const [machines, setMachines]     = useState([]);
   const [techId, setTechId]         = useState('');
   const [statusFilter, setFilter]   = useState('pending');
   const [loading, setLoading]       = useState(false);
@@ -27,8 +28,8 @@ export default function Lab() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [ord, techs] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians()]);
-      setOrders(ord); setTechs(techs);
+      const [ord, techs, macs] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines()]);
+      setOrders(ord); setTechs(techs); setMachines(macs);
       if (techs.length && !techId) setTechId(techs[0].provider_id);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
@@ -85,6 +86,20 @@ export default function Lab() {
     finally { setSaving(false); }
   }
 
+  const [showProcess, setShowProcess] = useState(null);
+  const [procMachine, setProcMachine] = useState('');
+
+  async function handleProcess(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {
+      await api.processOnMachine(showProcess.lab_order_id, { machine_id: procMachine });
+      setShowProcess(null); load();
+      showFhir('⚙️ Order sent to machine. Simulation started (3s)...');
+      setTimeout(load, 3500); // refresh after simulation
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
   function setRF(k, v) { setResultForm(f => ({ ...f, [k]: v })); }
 
   const pendingCount   = orders.filter(o => o.order_status === 'pending').length;
@@ -97,6 +112,7 @@ export default function Lab() {
     { key: 'collected',  label: 'Collected' },
     { key: 'processing', label: 'Processing' },
     { key: 'resulted',   label: 'Resulted' },
+    { key: 'verified',   label: 'Verified' },
   ];
 
   return (
@@ -204,6 +220,12 @@ export default function Lab() {
                       <CheckCircle className="w-4 h-4 text-emerald-400" /> Mark Collected
                     </button>
                   )}
+                  {selected.order_status === 'collected' && (
+                    <button className="btn-primary flex items-center gap-1.5 text-sm"
+                      onClick={() => setShowProcess(selected)}>
+                      <Beaker className="w-4 h-4" /> Process on Machine
+                    </button>
+                  )}
                 </div>
               </div>
               {selected.collected_at && (
@@ -227,7 +249,7 @@ export default function Lab() {
                     }`} />
                     <div>
                       <p className="text-sm font-medium text-slate-200">{t.test_name}</p>
-                      <p className="text-xs text-slate-500">{t.category?.replace('_',' ')} · {t.specimen_required}</p>
+                      <p className="text-xs text-slate-500">{t.test_code}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -270,6 +292,35 @@ export default function Lab() {
                 Confirm Collection
               </button>
               <button type="button" className="btn-secondary" onClick={() => setShowCollect(null)}>Cancel</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Process on Machine Modal */}
+      <Modal open={!!showProcess} onClose={() => setShowProcess(null)} title="Process on Lab Machine">
+        {showProcess && (
+          <form onSubmit={handleProcess} className="space-y-4">
+            <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-slate-200">Order {showProcess.order_number}</p>
+              <p className="text-slate-500 text-xs">For {showProcess.patient_name}</p>
+            </div>
+            <div>
+              <label className="label">Select Machine</label>
+              <select className="select" value={procMachine} onChange={e => setProcMachine(e.target.value)} required>
+                <option value="">-- Choose Machine --</option>
+                {machines.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.type})</option>
+                ))}
+                {machines.length === 0 && <option value="1">Simulated Machine 1</option>}
+              </select>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving}>
+                {saving ? <Spinner className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                Start Processing (3s delay)
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setShowProcess(null)}>Cancel</button>
             </div>
           </form>
         )}

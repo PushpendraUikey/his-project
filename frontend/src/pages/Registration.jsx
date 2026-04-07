@@ -50,9 +50,12 @@ function validateForm(form) {
   if (!form.phone?.trim()) {
     errors.phone = 'Phone is required';
   } else {
-    const phoneDigits = form.phone.replace(/\D/g, '');
-    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-      errors.phone = 'Phone must be 10-15 digits';
+    // Keep optional leading +, strip all other non-digits
+    const phoneDigits = form.phone.replace(/(?!^\+)[^\d]/g, '');
+    if (!/^\d{10}$/.test(phoneDigits) &&
+        !/^91\d{10}$/.test(phoneDigits) &&
+        !/^\+91\d{10}$/.test(phoneDigits)) {
+      errors.phone = 'Phone must be exactly 10 digits (or include +91/91 prefix)';
     }
   }
 
@@ -68,6 +71,8 @@ function validateForm(form) {
   }
   if (!form.address.pincode?.trim()) {
     errors.address.pincode = 'Pincode is required';
+  } else if (!/^\d{6}$/.test(form.address.pincode.trim())) {
+    errors.address.pincode = 'Pincode must be exactly 6 digits';
   }
 
   // National ID (Aadhaar) - optional but if provided must be 12 digits
@@ -190,7 +195,7 @@ export default function Registration() {
     try {
       const payload = {
         ...form,
-        phone: form.phone.replace(/\D/g, ''),
+        phone: form.phone.replace(/(?!^\+)[^\d]/g, ''),
       };
 
       if (user?.provider_id) {

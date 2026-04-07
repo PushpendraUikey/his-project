@@ -64,11 +64,12 @@ router.get('/patient/:admissionId', async (req, res, next) => {
          WHERE doc.admission_id=$1 ORDER BY doc.created_at DESC`, [id]),
       pool.query(
         `SELECT lo.order_number, lo.ordered_at, lo.order_status, lo.priority,
-                json_agg(json_build_object('test_name', ltd.test_name, 'status', lot.individual_status,
-                  'result', lr.numeric_value, 'unit', lr.unit, 'flag', lr.abnormal_flag)) AS tests
+                json_agg(json_build_object('test_name', lot.test_name, 'status', lot.individual_status,
+                  'result', CASE WHEN lot.individual_status = 'verified' THEN lr.numeric_value ELSE NULL END, 
+                  'unit', CASE WHEN lot.individual_status = 'verified' THEN lr.unit ELSE NULL END, 
+                  'flag', CASE WHEN lot.individual_status = 'verified' THEN lr.abnormal_flag ELSE NULL END)) AS tests
          FROM lab_orders lo
          JOIN lab_order_tests lot ON lot.lab_order_id=lo.lab_order_id
-         JOIN lab_test_definitions ltd ON ltd.test_definition_id=lot.test_definition_id
          LEFT JOIN lab_results lr ON lr.order_test_id=lot.order_test_id
          WHERE lo.admission_id=$1
          GROUP BY lo.lab_order_id ORDER BY lo.ordered_at DESC`, [id]),
@@ -112,10 +113,11 @@ router.post('/orders', async (req, res, next) => {
       );
       lab_order_id = labOrder.lab_order_id;
 
-      for (const test_definition_id of tests) {
+      for (const test of tests) {
+        if (!test.loincCode || !test.testName) continue;
         await client.query(
-          `INSERT INTO lab_order_tests (lab_order_id, test_definition_id) VALUES ($1,$2)`,
-          [lab_order_id, test_definition_id]
+          `INSERT INTO lab_order_tests (lab_order_id, loinc_code, test_name) VALUES ($1,$2,$3)`,
+          [lab_order_id, test.loincCode, test.testName]
         );
       }
     }

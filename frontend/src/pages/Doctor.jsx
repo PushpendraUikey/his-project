@@ -151,17 +151,26 @@ export default function Doctor() {
     finally { setApprovingSaving(false); }
   }
 
-  function toggleTest(id) {
-    setOrderForm(f => ({
-      ...f,
-      tests: f.tests.includes(id) ? f.tests.filter(t => t !== id) : [...f.tests, id],
-    }));
-  }
+  const [loincSearch, setLoincSearch] = useState('');
+  const [loincResults, setLoincResults] = useState([]);
 
-  const grouped = labTests.reduce((acc, t) => {
-    (acc[t.category] = acc[t.category] || []).push(t);
-    return acc;
-  }, {});
+  useEffect(() => {
+    if (!loincSearch.trim()) { setLoincResults([]); return; }
+    const t = setTimeout(async () => {
+      try { setLoincResults(await api.searchLOINC(loincSearch)); } catch {}
+    }, 300);
+    return () => clearTimeout(t);
+  }, [loincSearch]);
+
+  function toggleLoinc(code, name) {
+    setOrderForm(f => {
+      const exists = f.tests.find(t => t.loincCode === code);
+      return {
+        ...f,
+        tests: exists ? f.tests.filter(t => t.loincCode !== code) : [...f.tests, { loincCode: code, testName: name }]
+      };
+    });
+  }
 
   const flagColor = { H:'text-red-400', HH:'text-red-500', L:'text-blue-400', LL:'text-blue-500', A:'text-amber-400', POS:'text-red-400', NEG:'text-emerald-400', N:'text-emerald-400' };
 
@@ -503,32 +512,31 @@ export default function Doctor() {
 
           {orderForm.order_type === 'lab' && (
             <div>
-              <label className="label">Select Tests</label>
-              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                {Object.entries(grouped).map(([cat, tests]) => (
-                  <div key={cat}>
-                    <p className="text-xs text-slate-600 uppercase tracking-wider mb-1.5">{cat.replace('_',' ')}</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {tests.map(t => (
-                        <label key={t.test_definition_id}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
-                            orderForm.tests.includes(t.test_definition_id)
-                              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                              : 'bg-slate-800 border border-transparent text-slate-400 hover:text-slate-300'
-                          }`}>
-                          <input type="checkbox" className="hidden"
-                            checked={orderForm.tests.includes(t.test_definition_id)}
-                            onChange={() => toggleTest(t.test_definition_id)} />
-                          <span className="font-mono text-xs">{t.test_code}</span>
-                          <span className="truncate">{t.test_name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <label className="label">Search LOINC Tests</label>
+              <input className="input mb-2" placeholder="Search by name, code..." value={loincSearch} onChange={e => setLoincSearch(e.target.value)} />
+              {loincResults.length > 0 && (
+                <div className="bg-slate-800 border border-slate-700 rounded-lg max-h-40 overflow-y-auto mb-3">
+                  {loincResults.map(t => (
+                    <button key={t.loinc_num} type="button" onClick={() => { toggleLoinc(t.loinc_num, t.name || t.short_name); setLoincSearch(''); setLoincResults([]); }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-300">
+                      <span className="font-mono text-cyan-400 mr-2">{t.loinc_num}</span>
+                      {t.name || t.short_name}
+                    </button>
+                  ))}
+                </div>
+              )}
               {orderForm.tests.length > 0 && (
-                <p className="text-xs text-emerald-400 mt-2">{orderForm.tests.length} test(s) selected</p>
+                <div className="space-y-1 mt-2">
+                  <p className="text-xs text-slate-500 mb-2">Selected Tests:</p>
+                  {orderForm.tests.map(t => (
+                    <div key={t.loincCode} className="flex justify-between items-center text-sm bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-3 py-2 rounded-lg">
+                      <span><span className="font-mono text-xs opacity-70 mr-2">{t.loincCode}</span>{t.testName}</span>
+                      <button type="button" onClick={() => toggleLoinc(t.loincCode, t.testName)} className="text-emerald-400 hover:text-emerald-200">
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
