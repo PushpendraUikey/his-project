@@ -12,16 +12,21 @@ router.get('/orders', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT lo.lab_order_id, lo.order_number, lo.ordered_at, lo.priority,
               lo.order_status, lo.specimen_type, lo.collected_at, lo.lis_accession_number,
+              lo.machine_id,
+              lm.name  AS machine_name,
+              lm.type  AS machine_type,
               p.first_name || ' ' || p.last_name AS patient_name, p.mrn, p.dob,
-              a.admission_number, b.bed_number, w.ward_name,
+              p.gender, p.blood_group,
+              a.admission_number, a.chief_complaint,
+              b.bed_number, w.ward_name,
               pr.full_name AS ordering_doctor,
               json_agg(json_build_object(
-                'order_test_id', lot.order_test_id,
-                'test_code',      COALESCE(ltd.loinc_code,    lot.loinc_code),
-                'test_name',      COALESCE(ltd.test_name,     lot.test_name),
-                'category',       ltd.category,
+                'order_test_id',     lot.order_test_id,
+                'test_code',         COALESCE(ltd.loinc_code,  lot.loinc_code),
+                'test_name',         COALESCE(ltd.test_name,   lot.test_name),
+                'category',          ltd.category,
                 'specimen_required', ltd.specimen_required,
-                'status', lot.individual_status
+                'status',            lot.individual_status
               ) ORDER BY COALESCE(ltd.test_name, lot.test_name)) AS tests
        FROM lab_orders lo
        JOIN patients p ON p.patient_id = lo.patient_id
@@ -31,8 +36,9 @@ router.get('/orders', async (req, res, next) => {
        JOIN providers pr ON pr.provider_id = lo.ordering_provider_id
        JOIN lab_order_tests lot ON lot.lab_order_id = lo.lab_order_id
        LEFT JOIN lab_test_definitions ltd ON ltd.test_definition_id = lot.test_definition_id
+       LEFT JOIN lab_machines lm ON lm.id = lo.machine_id
        WHERE lo.order_status = $1
-       GROUP BY lo.lab_order_id, p.patient_id, a.admission_id, b.bed_id, w.ward_id, pr.provider_id
+       GROUP BY lo.lab_order_id, p.patient_id, a.admission_id, b.bed_id, w.ward_id, pr.provider_id, lm.id
        ORDER BY
          CASE lo.priority WHEN 'critical' THEN 1 WHEN 'stat' THEN 2 ELSE 3 END,
          lo.ordered_at ASC`,
@@ -63,10 +69,10 @@ router.post('/orders/:id/process', async (req, res, next) => {
   const lab_order_id = req.params.id;
 
   try {
-    // Set to processing
+    // Set to processing and record which machine
     await pool.query(
-      `UPDATE lab_orders SET order_status='processing', updated_at=NOW() WHERE lab_order_id=$1`,
-      [lab_order_id]
+      `UPDATE lab_orders SET order_status='processing', machine_id=$1, updated_at=NOW() WHERE lab_order_id=$2`,
+      [machine_id || null, lab_order_id]
     );
 
     // Run simulation asynchronously
