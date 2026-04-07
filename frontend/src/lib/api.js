@@ -95,6 +95,8 @@ export const api = {
   getLabTests:        () => req('/doctor/lab-tests'),
   getDoctors:         () => req('/doctor/doctors'),
   searchLOINC:        (q) => req(`/loinc?q=${encodeURIComponent(q)}`),
+  searchICD:          (q) => req(`/icd/search?q=${encodeURIComponent(q)}`),
+  updateDiagnosis:    (admissionId, data) => req(`/doctor/patient/${admissionId}/diagnosis`, { method: 'PATCH', body: data }),
   approveDischarge:   (data) => req('/doctor/approve-discharge', { method: 'POST', body: data }),
   getPendingApprovals:(doctorId) => req(`/doctor/pending-approvals${doctorId ? `?doctor_id=${doctorId}` : ''}`),
 
