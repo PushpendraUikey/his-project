@@ -4,17 +4,21 @@ import pool from '../db.js';
 const router = Router();
 
 // GET /api/loinc?q=glucose
+// Searches full LOINC database (109k codes). Returns top 20 matches.
 router.get('/', async (req, res, next) => {
   try {
     const { q } = req.query;
-    if (!q) return res.json([]); // Return empty if no query
+    if (!q) return res.json([]);
 
-    // Search by loinc_num or name or short_name
     const { rows } = await pool.query(
-      `SELECT * FROM loinc_codes 
-       WHERE name ILIKE $1 OR short_name ILIKE $1 OR loinc_num ILIKE $1
-       ORDER BY loinc_num ASC
-       LIMIT 50`,
+      `SELECT loinc_num, name, short_name, class
+       FROM loinc_codes
+       WHERE (name ILIKE $1 OR short_name ILIKE $1 OR loinc_num ILIKE $1)
+         AND name NOT ILIKE 'Deprecated%'
+       ORDER BY
+         CASE WHEN loinc_num ILIKE $1 THEN 0 ELSE 1 END,
+         length(name)
+       LIMIT 20`,
       [`%${q}%`]
     );
 

@@ -30,7 +30,12 @@ export default function Lab() {
     try {
       const [ord, techs, macs] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines()]);
       setOrders(ord); setTechs(techs); setMachines(macs);
-      if (techs.length && !techId) setTechId(techs[0].provider_id);
+      if (!techId) {
+        const myTech = user?.role === 'lab_technician'
+          ? techs.find(t => t.provider_id === user.provider_id)
+          : null;
+        setTechId(myTech?.provider_id || techs[0]?.provider_id || '');
+      }
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [statusFilter, techId]);
@@ -155,10 +160,18 @@ export default function Lab() {
         <div className="px-4 py-4 border-b border-slate-800">
           <h2 className="font-semibold text-slate-200 mb-1">Laboratory</h2>
           <div className="mt-3">
-            <label className="label">Technician</label>
-            <select className="select text-xs" value={techId} onChange={e => setTechId(e.target.value)}>
-              {technicians.map(t => <option key={t.provider_id} value={t.provider_id}>{t.full_name}</option>)}
-            </select>
+            {user?.role === 'lab_technician' ? (
+              <div className="text-xs text-slate-600">
+                Technician: <span className="text-slate-300 font-medium">{user.full_name || 'You'}</span>
+              </div>
+            ) : (
+              <>
+                <label className="label">Technician</label>
+                <select className="select text-xs" value={techId} onChange={e => setTechId(e.target.value)}>
+                  {technicians.map(t => <option key={t.provider_id} value={t.provider_id}>{t.full_name}</option>)}
+                </select>
+              </>
+            )}
           </div>
         </div>
 
@@ -419,7 +432,17 @@ export default function Lab() {
           <form onSubmit={handleResult} className="space-y-4">
             <div className="bg-slate-800 rounded-lg px-4 py-3">
               <p className="text-sm font-medium text-slate-200">{showResult.test.test_name}</p>
-              <p className="text-xs text-slate-500">{showResult.test.category} · {showResult.test.specimen_required}</p>
+              <div className="flex items-center gap-3 mt-1">
+                {showResult.test.test_code && (
+                  <span className="font-mono text-xs text-cyan-400">LOINC: {showResult.test.test_code}</span>
+                )}
+                {showResult.test.category && (
+                  <span className="text-xs text-slate-500 capitalize">{showResult.test.category}</span>
+                )}
+                {showResult.test.specimen_required && (
+                  <span className="text-xs text-slate-600">{showResult.test.specimen_required}</span>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

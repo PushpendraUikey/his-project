@@ -191,12 +191,14 @@ export default function Doctor() {
     finally { setIcdSaving(false); }
   }
 
-  function toggleLoinc(code, name) {
+  function toggleLoinc(loincCode, name) {
     setOrderForm(f => {
-      const exists = f.tests.find(t => t.loincCode === code);
+      const exists = f.tests.find(t => t.loincCode === loincCode);
       return {
         ...f,
-        tests: exists ? f.tests.filter(t => t.loincCode !== code) : [...f.tests, { loincCode: code, testName: name }]
+        tests: exists
+          ? f.tests.filter(t => t.loincCode !== loincCode)
+          : [...f.tests, { loincCode, testName: name }],
       };
     });
   }
@@ -600,15 +602,16 @@ export default function Doctor() {
 
           {orderForm.order_type === 'lab' && (
             <div>
-              <label className="label">Search LOINC Tests</label>
-              <input className="input mb-2" placeholder="Search by name, code..." value={loincSearch} onChange={e => setLoincSearch(e.target.value)} />
+              <label className="label">Search Lab Tests (LOINC)</label>
+              <input className="input mb-2" placeholder="e.g. glucose, haemoglobin, WBC..." value={loincSearch} onChange={e => setLoincSearch(e.target.value)} />
               {loincResults.length > 0 && (
                 <div className="bg-slate-800 border border-slate-700 rounded-lg max-h-40 overflow-y-auto mb-3">
                   {loincResults.map(t => (
-                    <button key={t.loinc_num} type="button" onClick={() => { toggleLoinc(t.loinc_num, t.name || t.short_name); setLoincSearch(''); setLoincResults([]); }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-300">
-                      <span className="font-mono text-cyan-400 mr-2">{t.loinc_num}</span>
-                      {t.name || t.short_name}
+                    <button key={t.loinc_num} type="button"
+                      onClick={() => { toggleLoinc(t.loinc_num, t.name || t.short_name); setLoincSearch(''); setLoincResults([]); }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-300 border-b border-slate-700/50 last:border-0">
+                      <span className="text-slate-200">{t.name || t.short_name}</span>
+                      <span className="font-mono text-cyan-400 ml-2 text-xs">(LOINC: {t.loinc_num})</span>
                     </button>
                   ))}
                 </div>
@@ -618,7 +621,10 @@ export default function Doctor() {
                   <p className="text-xs text-slate-500 mb-2">Selected Tests:</p>
                   {orderForm.tests.map(t => (
                     <div key={t.loincCode} className="flex justify-between items-center text-sm bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-3 py-2 rounded-lg">
-                      <span><span className="font-mono text-xs opacity-70 mr-2">{t.loincCode}</span>{t.testName}</span>
+                      <span>
+                        {t.testName}
+                        {t.loincCode && <span className="font-mono text-xs opacity-60 ml-2">(LOINC: {t.loincCode})</span>}
+                      </span>
                       <button type="button" onClick={() => toggleLoinc(t.loincCode, t.testName)} className="text-emerald-400 hover:text-emerald-200">
                         <XCircle className="w-4 h-4" />
                       </button>

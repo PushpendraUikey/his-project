@@ -17,12 +17,12 @@ router.get('/orders', async (req, res, next) => {
               pr.full_name AS ordering_doctor,
               json_agg(json_build_object(
                 'order_test_id', lot.order_test_id,
-                'test_code', lot.loinc_code,
-                'test_name', lot.test_name,
-                'category', ltd.category,
+                'test_code',      COALESCE(ltd.loinc_code,    lot.loinc_code),
+                'test_name',      COALESCE(ltd.test_name,     lot.test_name),
+                'category',       ltd.category,
                 'specimen_required', ltd.specimen_required,
                 'status', lot.individual_status
-              ) ORDER BY ltd.test_name) AS tests
+              ) ORDER BY COALESCE(ltd.test_name, lot.test_name)) AS tests
        FROM lab_orders lo
        JOIN patients p ON p.patient_id = lo.patient_id
        JOIN admissions a ON a.admission_id = lo.admission_id

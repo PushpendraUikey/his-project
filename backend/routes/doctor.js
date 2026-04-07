@@ -121,10 +121,11 @@ router.post('/orders', async (req, res, next) => {
       lab_order_id = labOrder.lab_order_id;
 
       for (const test of tests) {
-        if (!test.loincCode || !test.testName) continue;
+        if (!test.loincCode && !test.testName) continue;
         await client.query(
-          `INSERT INTO lab_order_tests (lab_order_id, loinc_code, test_name) VALUES ($1,$2,$3)`,
-          [lab_order_id, test.loincCode, test.testName]
+          `INSERT INTO lab_order_tests (lab_order_id, test_definition_id, loinc_code, test_name)
+           VALUES ($1, $2, $3, $4)`,
+          [lab_order_id, test.testDefinitionId || null, test.loincCode || null, test.testName || null]
         );
       }
     }

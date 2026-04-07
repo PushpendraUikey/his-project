@@ -112,7 +112,7 @@ export default function Layout() {
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-800">
-          <p className="text-xs text-slate-700">v3.0.0 · FHIR R4 · HL7 v3 · RBAC</p>
+          <p className="text-xs text-slate-700">v3.0.0 · FHIR R4 · ICD-11 · LOINC</p>
         </div>
       </aside>
 
