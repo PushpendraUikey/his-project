@@ -1,9 +1,9 @@
 -- ============================================================
--- HIS (Hospital Information System) Complete Schema
--- PostgreSQL Database Schema
+-- MediCore HIS (Hospital Information System) Complete Schema
+-- PostgreSQL Database Schema — Production-Grade v3.0
+-- Industry-standard: FHIR R4, HL7 v2, RBAC, Audit Logging
 -- ============================================================
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 BEGIN;
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS wards (
   ward_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ward_code     VARCHAR(50) NOT NULL UNIQUE,
   ward_name     VARCHAR(100) NOT NULL,
-  ward_type     VARCHAR(50) NOT NULL CHECK (ward_type IN ('general', 'icu', 'surgical', 'maternity', 'pediatric', 'emergency', 'pediatric')),
+  ward_type     VARCHAR(50) NOT NULL CHECK (ward_type IN ('general', 'icu', 'surgical', 'maternity', 'pediatric', 'emergency')),
   department    VARCHAR(100),
   total_beds    INTEGER,
   floor_number  INTEGER,
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS wards (
 
 CREATE INDEX idx_wards_code ON wards(ward_code);
 CREATE INDEX idx_wards_active ON wards(is_active);
+CREATE INDEX idx_wards_type ON wards(ward_type);
 
 -- ============================================================
 -- 2. BEDS TABLE
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS beds (
   bed_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ward_id           UUID NOT NULL REFERENCES wards(ward_id) ON DELETE RESTRICT,
   bed_number        VARCHAR(50) NOT NULL,
-  bed_type          VARCHAR(50) NOT NULL CHECK (bed_type IN ('standard', 'icu', 'maternity', 'pediatric')),
+  bed_type          VARCHAR(50) NOT NULL CHECK (bed_type IN ('standard', 'icu', 'maternity', 'pediatric', 'emergency')),
   status            VARCHAR(50) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'cleaning', 'maintenance', 'reserved')),
   status_updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_at        TIMESTAMPTZ DEFAULT NOW(),
@@ -46,19 +47,22 @@ CREATE INDEX idx_beds_ward ON beds(ward_id);
 CREATE INDEX idx_beds_status ON beds(status);
 
 -- ============================================================
--- 3. PROVIDERS TABLE
+-- 3. PROVIDERS TABLE (Users / Staff)
+-- Roles: doctor, nurse, lab_technician, admin, registration_desk, admission_desk
 -- ============================================================
 CREATE TABLE IF NOT EXISTS providers (
-  provider_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider_code VARCHAR(50) NOT NULL UNIQUE,
-  full_name     VARCHAR(150) NOT NULL,
-  specialty     VARCHAR(100),
-  license_number VARCHAR(100),
-  role          VARCHAR(50) NOT NULL CHECK (role IN ('doctor', 'nurse', 'lab_technician', 'admin')),
-  is_active     BOOLEAN DEFAULT TRUE,
-  password_hash VARCHAR(255),
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
+  provider_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_code      VARCHAR(50) NOT NULL UNIQUE,
+  full_name          VARCHAR(150) NOT NULL,
+  specialty          VARCHAR(100),
+  license_number     VARCHAR(100),
+  role               VARCHAR(50) NOT NULL CHECK (role IN ('doctor', 'nurse', 'lab_technician', 'admin', 'registration_desk', 'admission_desk')),
+  is_active          BOOLEAN DEFAULT TRUE,
+  password_hash      VARCHAR(255),
+  password_must_change BOOLEAN DEFAULT TRUE,
+  created_by         UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_providers_code ON providers(provider_code);
@@ -67,19 +71,25 @@ CREATE INDEX idx_providers_active ON providers(is_active);
 
 -- ============================================================
 -- 4. PATIENTS TABLE
+-- Mandatory: first_name, last_name, dob (<= today), gender, address, phone
+-- Optional: national_id (Aadhaar 12 digits), email, insurance, blood_group
 -- ============================================================
 CREATE TABLE IF NOT EXISTS patients (
   patient_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   mrn           VARCHAR(50) NOT NULL UNIQUE,
   first_name    VARCHAR(100) NOT NULL,
   last_name     VARCHAR(100) NOT NULL,
-  dob           DATE,
-  gender        VARCHAR(20) CHECK (gender IN ('male', 'female', 'other')),
-  blood_group   VARCHAR(10),
-  national_id   VARCHAR(100),
-  phone         VARCHAR(20),
-  email         VARCHAR(100),
-  address       JSONB,  -- { line1, city, state, pincode }
+  dob           DATE NOT NULL CHECK (dob <= CURRENT_DATE),
+  gender        VARCHAR(20) NOT NULL CHECK (gender IN ('male', 'female', 'other')),
+  blood_group   VARCHAR(10) CHECK (blood_group IN ('A+','A-','B+','B-','AB+','AB-','O+','O-', NULL)),
+  national_id   VARCHAR(12) CHECK (national_id IS NULL OR LENGTH(national_id) = 12),
+  phone         VARCHAR(15) NOT NULL CHECK (LENGTH(phone) >= 10),
+  email         VARCHAR(150),
+  address       JSONB NOT NULL,  -- { line1, city, state, pincode }
+  is_active     BOOLEAN DEFAULT TRUE,
+  version       INTEGER DEFAULT 1,
+  created_by    UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
+  updated_by    UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
@@ -87,9 +97,36 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE INDEX idx_patients_mrn ON patients(mrn);
 CREATE INDEX idx_patients_name ON patients(last_name, first_name);
 CREATE INDEX idx_patients_phone ON patients(phone);
+CREATE INDEX idx_patients_national_id ON patients(national_id);
 
 -- ============================================================
--- 5. PATIENT INSURANCE TABLE
+-- 5. PATIENT VERSIONS TABLE (Demographic History / Audit)
+-- Every update to patients creates a snapshot here
+-- ============================================================
+CREATE TABLE IF NOT EXISTS patient_versions (
+  version_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id    UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+  version       INTEGER NOT NULL,
+  mrn           VARCHAR(50) NOT NULL,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  dob           DATE NOT NULL,
+  gender        VARCHAR(20) NOT NULL,
+  blood_group   VARCHAR(10),
+  national_id   VARCHAR(12),
+  phone         VARCHAR(15),
+  email         VARCHAR(150),
+  address       JSONB,
+  changed_by    UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
+  change_reason TEXT,
+  archived_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_patient_versions_patient ON patient_versions(patient_id);
+CREATE INDEX idx_patient_versions_version ON patient_versions(patient_id, version DESC);
+
+-- ============================================================
+-- 6. PATIENT INSURANCE TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS patient_insurance (
   insurance_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,7 +145,8 @@ CREATE INDEX idx_insurance_patient ON patient_insurance(patient_id);
 CREATE INDEX idx_insurance_policy ON patient_insurance(policy_number);
 
 -- ============================================================
--- 6. ADMISSIONS TABLE
+-- 7. ADMISSIONS TABLE
+-- Includes doctor approval workflow for discharge
 -- ============================================================
 CREATE TABLE IF NOT EXISTS admissions (
   admission_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,6 +161,13 @@ CREATE TABLE IF NOT EXISTS admissions (
   chief_complaint        TEXT,
   diagnosis_primary      TEXT,
   status                 VARCHAR(50) NOT NULL DEFAULT 'admitted' CHECK (status IN ('admitted', 'discharged', 'transferred', 'expired')),
+  -- Doctor approval workflow
+  discharge_approved     BOOLEAN DEFAULT FALSE,
+  discharge_approved_by  UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
+  discharge_approved_at  TIMESTAMPTZ,
+  discharge_decision     VARCHAR(20) CHECK (discharge_decision IN ('discharge', 'transfer', 'continue', NULL)),
+  discharge_notes        TEXT,
+  -- Transfer fields
   transfer_destination   VARCHAR(200),
   transfer_type          VARCHAR(20) CHECK (transfer_type IN ('internal', 'external')),
   updated_at             TIMESTAMPTZ DEFAULT NOW(),
@@ -133,9 +178,11 @@ CREATE INDEX idx_admissions_patient ON admissions(patient_id);
 CREATE INDEX idx_admissions_bed ON admissions(bed_id);
 CREATE INDEX idx_admissions_status ON admissions(status);
 CREATE INDEX idx_admissions_admitted ON admissions(admitted_at DESC);
+CREATE INDEX idx_admissions_attending ON admissions(attending_provider_id);
+CREATE INDEX idx_admissions_discharge_approved ON admissions(discharge_approved);
 
 -- ============================================================
--- 7. DISCHARGES TABLE
+-- 8. DISCHARGES TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS discharges (
   discharge_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -153,7 +200,7 @@ CREATE TABLE IF NOT EXISTS discharges (
 CREATE INDEX idx_discharges_admission ON discharges(admission_id);
 
 -- ============================================================
--- 8. VITAL SIGNS TABLE
+-- 9. VITAL SIGNS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS vital_signs (
   vital_sign_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -175,7 +222,7 @@ CREATE INDEX idx_vitals_admission ON vital_signs(admission_id);
 CREATE INDEX idx_vitals_recorded ON vital_signs(recorded_at DESC);
 
 -- ============================================================
--- 9. NURSING NOTES TABLE
+-- 10. NURSING NOTES TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS nursing_notes (
   note_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -192,7 +239,7 @@ CREATE INDEX idx_nursing_admission ON nursing_notes(admission_id);
 CREATE INDEX idx_nursing_noted ON nursing_notes(noted_at DESC);
 
 -- ============================================================
--- 10. LAB TEST DEFINITIONS TABLE
+-- 11. LAB TEST DEFINITIONS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS lab_test_definitions (
   test_definition_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -212,7 +259,7 @@ CREATE INDEX idx_lab_test_code ON lab_test_definitions(test_code);
 CREATE INDEX idx_lab_test_active ON lab_test_definitions(is_active);
 
 -- ============================================================
--- 11. LAB ORDERS TABLE
+-- 12. LAB ORDERS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS lab_orders (
   lab_order_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -239,7 +286,7 @@ CREATE INDEX idx_lab_order_status ON lab_orders(order_status);
 CREATE INDEX idx_lab_order_ordered ON lab_orders(ordered_at DESC);
 
 -- ============================================================
--- 12. LAB ORDER TESTS TABLE
+-- 13. LAB ORDER TESTS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS lab_order_tests (
   order_test_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -255,7 +302,7 @@ CREATE INDEX idx_lab_order_tests_def ON lab_order_tests(test_definition_id);
 CREATE INDEX idx_lab_order_tests_status ON lab_order_tests(individual_status);
 
 -- ============================================================
--- 13. LAB RESULTS TABLE
+-- 14. LAB RESULTS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS lab_results (
   result_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -279,7 +326,7 @@ CREATE INDEX idx_lab_result_test ON lab_results(order_test_id);
 CREATE INDEX idx_lab_result_critical ON lab_results(is_critical);
 
 -- ============================================================
--- 14. DOCTOR ORDERS TABLE
+-- 15. DOCTOR ORDERS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS doctor_orders (
   order_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -298,13 +345,13 @@ CREATE INDEX idx_doctor_orders_doctor ON doctor_orders(doctor_id);
 CREATE INDEX idx_doctor_orders_status ON doctor_orders(status);
 
 -- ============================================================
--- 15. ADT AUDIT LOG TABLE
+-- 16. ADT AUDIT LOG TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS adt_audit_log (
   audit_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   admission_id      UUID NOT NULL REFERENCES admissions(admission_id) ON DELETE CASCADE,
   performed_by      UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
-  event_type        VARCHAR(50) NOT NULL CHECK (event_type IN ('ADMIT', 'TRANSFER', 'DISCHARGE', 'CANCEL')),
+  event_type        VARCHAR(50) NOT NULL CHECK (event_type IN ('ADMIT', 'TRANSFER', 'DISCHARGE', 'CANCEL', 'APPROVE_DISCHARGE', 'APPROVE_TRANSFER', 'APPROVE_CONTINUE')),
   event_description TEXT,
   created_at        TIMESTAMPTZ DEFAULT NOW()
 );
@@ -314,7 +361,7 @@ CREATE INDEX idx_adt_event ON adt_audit_log(event_type);
 CREATE INDEX idx_adt_created ON adt_audit_log(created_at DESC);
 
 -- ============================================================
--- 16. PATIENT TRANSFERS TABLE
+-- 17. PATIENT TRANSFERS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS patient_transfers (
   transfer_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -335,7 +382,7 @@ CREATE INDEX idx_transfers_admission ON patient_transfers(admission_id);
 CREATE INDEX idx_transfers_type ON patient_transfers(transfer_type);
 
 -- ============================================================
--- 17. HIE MESSAGE LOG TABLE
+-- 18. HIE MESSAGE LOG TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS hie_message_log (
   log_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -361,8 +408,29 @@ CREATE INDEX idx_hie_log_admission ON hie_message_log(admission_id);
 CREATE INDEX idx_hie_log_type ON hie_message_log(message_type);
 CREATE INDEX idx_hie_log_sent_at ON hie_message_log(sent_at DESC);
 
+-- ============================================================
+-- 19. PROVIDER AUDIT LOG (tracks admin actions on users)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS provider_audit_log (
+  audit_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id   UUID NOT NULL REFERENCES providers(provider_id) ON DELETE CASCADE,
+  action        VARCHAR(50) NOT NULL CHECK (action IN ('CREATE', 'ACTIVATE', 'DEACTIVATE', 'RESET_PASSWORD', 'CHANGE_PASSWORD', 'UPDATE_ROLE')),
+  performed_by  UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
+  details       TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_provider_audit_provider ON provider_audit_log(provider_id);
+CREATE INDEX idx_provider_audit_action ON provider_audit_log(action);
+CREATE INDEX idx_provider_audit_created ON provider_audit_log(created_at DESC);
+
 COMMIT;
 
 -- ============================================================
--- Schema creation complete
+-- Schema creation complete — MediCore HIS v3.0
+-- Tables: 19 (wards, beds, providers, patients, patient_versions,
+--   patient_insurance, admissions, discharges, vital_signs,
+--   nursing_notes, lab_test_definitions, lab_orders, lab_order_tests,
+--   lab_results, doctor_orders, adt_audit_log, patient_transfers,
+--   hie_message_log, provider_audit_log)
 -- ============================================================

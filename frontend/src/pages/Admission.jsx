@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BedDouble, Search, UserCheck, LogOut, Plus, ArrowRightLeft, ArrowUpRight, Network } from 'lucide-react';
+import { BedDouble, Search, UserCheck, LogOut, Plus, ArrowRightLeft, ArrowUpRight, Network, CheckCircle, AlertCircle } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, StatCard, EmptyState } from '../components/ui';
@@ -161,6 +161,28 @@ export default function Admission() {
     blocked:     'bg-slate-700 text-slate-500',
   };
 
+  // Filter beds based on admission type
+  const filteredBeds = form.admission_type === 'emergency'
+    ? beds.filter(b => b.ward_type === 'emergency')
+    : beds;
+
+  // Helper to get approval badge
+  const getApprovalBadge = (admission) => {
+    if (!admission.discharge_approved) {
+      return { label: 'Pending', bgClass: 'bg-slate-500/20 text-slate-400 border border-slate-500/30' };
+    }
+    if (admission.discharge_decision === 'discharge') {
+      return { label: 'Discharge OK', bgClass: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' };
+    }
+    if (admission.discharge_decision === 'transfer') {
+      return { label: 'Transfer OK', bgClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/30' };
+    }
+    if (admission.discharge_decision === 'continue') {
+      return { label: 'Continue', bgClass: 'bg-blue-500/20 text-blue-400 border border-blue-500/30' };
+    }
+    return { label: 'Pending', bgClass: 'bg-slate-500/20 text-slate-400 border border-slate-500/30' };
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* FHIR Toast */}
@@ -219,41 +241,66 @@ export default function Admission() {
                     <th className="th">Ward / Bed</th>
                     <th className="th">Type</th>
                     <th className="th">Doctor</th>
+                    <th className="th">Approval</th>
                     <th className="th">Admitted</th>
                     <th className="th">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {admissions.map(a => (
-                    <tr key={a.admission_id} className="table-row">
-                      <td className="td font-mono text-cyan-400 text-xs">{a.admission_number}</td>
-                      <td className="td">
-                        <div className="font-medium text-slate-200">{a.patient_name}</div>
-                        <div className="text-xs text-slate-500">{a.mrn} · {age(a.dob)} · {a.gender}</div>
-                      </td>
-                      <td className="td">
-                        <div className="text-slate-300">{a.ward_name || '—'}</div>
-                        {a.bed_number && <div className="text-xs text-slate-500">Bed {a.bed_number}</div>}
-                      </td>
-                      <td className="td">
-                        <span className="badge badge-blue capitalize">{a.admission_type}</span>
-                      </td>
-                      <td className="td text-slate-400 text-xs">{a.attending_doctor || '—'}</td>
-                      <td className="td text-slate-500 text-xs">{formatDateTime(a.admitted_at)}</td>
-                      <td className="td">
-                        <div className="flex items-center gap-2">
-                          <button className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1"
-                            onClick={() => { setShowTransfer(a); setTransferType('internal'); }}>
-                            <ArrowRightLeft className="w-3 h-3" /> Transfer
-                          </button>
-                          <button className="btn-danger text-xs px-2.5 py-1.5 flex items-center gap-1"
-                            onClick={() => setShowDischarge(a)}>
-                            <LogOut className="w-3 h-3" /> Discharge
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {admissions.map(a => {
+                    const approval = getApprovalBadge(a);
+                    const isDischargeApproved = a.discharge_approved === true;
+
+                    return (
+                      <tr key={a.admission_id} className="table-row">
+                        <td className="td font-mono text-cyan-400 text-xs">{a.admission_number}</td>
+                        <td className="td">
+                          <div className="font-medium text-slate-200">{a.patient_name}</div>
+                          <div className="text-xs text-slate-500">{a.mrn} · {age(a.dob)} · {a.gender}</div>
+                        </td>
+                        <td className="td">
+                          <div className="text-slate-300">{a.ward_name || '—'}</div>
+                          {a.bed_number && <div className="text-xs text-slate-500">Bed {a.bed_number}</div>}
+                        </td>
+                        <td className="td">
+                          <span className="badge badge-blue capitalize">{a.admission_type}</span>
+                        </td>
+                        <td className="td text-slate-400 text-xs">{a.attending_doctor || '—'}</td>
+                        <td className="td">
+                          <span className={`badge text-xs ${approval.bgClass}`}>
+                            {approval.label}
+                          </span>
+                        </td>
+                        <td className="td text-slate-500 text-xs">{formatDateTime(a.admitted_at)}</td>
+                        <td className="td">
+                          <div className="flex items-center gap-2">
+                            <button className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1"
+                              onClick={() => { setShowTransfer(a); setTransferType('internal'); }}>
+                              <ArrowRightLeft className="w-3 h-3" /> Transfer
+                            </button>
+                            <div className="group relative">
+                              <button
+                                className={`text-xs px-2.5 py-1.5 flex items-center gap-1 rounded-md transition-all ${
+                                  isDischargeApproved
+                                    ? 'btn-danger'
+                                    : 'bg-red-500/20 text-red-400 border border-red-500/30 cursor-not-allowed opacity-50'
+                                }`}
+                                onClick={() => isDischargeApproved && setShowDischarge(a)}
+                                disabled={!isDischargeApproved}>
+                                <LogOut className="w-3 h-3" /> Discharge
+                                {isDischargeApproved && <CheckCircle className="w-3 h-3 text-emerald-400" />}
+                              </button>
+                              {!isDischargeApproved && (
+                                <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                                  Awaiting doctor approval
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -323,11 +370,20 @@ export default function Admission() {
                 ))}
               </select>
             </div>
+
+            {/* Emergency Ward Enforcement Banner */}
+            {form.admission_type === 'emergency' && filteredBeds.length > 0 && (
+              <div className="col-span-2 flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5 text-xs text-amber-400">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                Emergency admissions are restricted to Emergency Ward beds only
+              </div>
+            )}
+
             <div>
               <label className="label">Assign Bed</label>
               <select className="select" value={form.bed_id} onChange={e => set('bed_id', e.target.value)}>
                 <option value="">— No bed yet —</option>
-                {beds.map(b => (
+                {filteredBeds.map(b => (
                   <option key={b.bed_id} value={b.bed_id}>
                     {b.bed_number} · {b.ward_name} ({b.bed_type})
                   </option>

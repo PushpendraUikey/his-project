@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, UserPlus, User, Phone, Mail, Edit2, ChevronRight } from 'lucide-react';
-import { api, formatDate, age } from '../lib/api';
+import { Search, UserPlus, User, Phone, Mail, Edit2, ChevronRight, History } from 'lucide-react';
+import { api, formatDate, formatDateTime, age } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState } from '../components/ui';
 
 const EMPTY_FORM = {
@@ -10,16 +11,108 @@ const EMPTY_FORM = {
   insurance: { provider_name: '', policy_number: '', group_number: '', valid_from: '', valid_to: '' },
 };
 
+const EMPTY_ERRORS = {
+  first_name: '', last_name: '', dob: '', gender: '', blood_group: '',
+  national_id: '', phone: '', email: '',
+  address: { line1: '', city: '', state: '', pincode: '' },
+};
+
+function validateForm(form) {
+  const errors = JSON.parse(JSON.stringify(EMPTY_ERRORS));
+
+  // First Name
+  if (!form.first_name?.trim()) {
+    errors.first_name = 'First name is required';
+  }
+
+  // Last Name
+  if (!form.last_name?.trim()) {
+    errors.last_name = 'Last name is required';
+  }
+
+  // Date of Birth
+  if (!form.dob) {
+    errors.dob = 'Date of birth is required';
+  } else {
+    const dobDate = new Date(form.dob);
+    const today = new Date();
+    if (dobDate > today) {
+      errors.dob = 'Date of birth cannot be in the future';
+    }
+  }
+
+  // Gender
+  if (!form.gender) {
+    errors.gender = 'Gender is required';
+  }
+
+  // Phone
+  if (!form.phone?.trim()) {
+    errors.phone = 'Phone is required';
+  } else {
+    const phoneDigits = form.phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      errors.phone = 'Phone must be 10-15 digits';
+    }
+  }
+
+  // Address
+  if (!form.address.line1?.trim()) {
+    errors.address.line1 = 'Address line 1 is required';
+  }
+  if (!form.address.city?.trim()) {
+    errors.address.city = 'City is required';
+  }
+  if (!form.address.state?.trim()) {
+    errors.address.state = 'State is required';
+  }
+  if (!form.address.pincode?.trim()) {
+    errors.address.pincode = 'Pincode is required';
+  }
+
+  // National ID (Aadhaar) - optional but if provided must be 12 digits
+  if (form.national_id?.trim()) {
+    const aadhaarDigits = form.national_id.replace(/\D/g, '');
+    if (aadhaarDigits.length !== 12) {
+      errors.national_id = 'Aadhaar must be 12 digits';
+    }
+  }
+
+  // Email - optional but if provided must be valid format
+  if (form.email?.trim()) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.email)) {
+      errors.email = 'Invalid email format';
+    }
+  }
+
+  return errors;
+}
+
+function hasErrors(errors) {
+  if (errors.first_name || errors.last_name || errors.dob || errors.gender ||
+      errors.phone || errors.email || errors.national_id ||
+      errors.address.line1 || errors.address.city || errors.address.state || errors.address.pincode) {
+    return true;
+  }
+  return false;
+}
+
 export default function Registration() {
-  const [patients, setPatients]   = useState([]);
-  const [query, setQuery]         = useState('');
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
-  const [showForm, setShowForm]   = useState(false);
-  const [editPatient, setEdit]    = useState(null);
-  const [form, setForm]           = useState(EMPTY_FORM);
-  const [saving, setSaving]       = useState(false);
-  const [selected, setSelected]   = useState(null);
+  const { user } = useAuth();
+  const [patients, setPatients]    = useState([]);
+  const [query, setQuery]          = useState('');
+  const [loading, setLoading]      = useState(false);
+  const [error, setError]          = useState('');
+  const [showForm, setShowForm]    = useState(false);
+  const [editPatient, setEdit]     = useState(null);
+  const [form, setForm]            = useState(EMPTY_FORM);
+  const [errors, setErrors]        = useState(EMPTY_ERRORS);
+  const [saving, setSaving]        = useState(false);
+  const [selected, setSelected]    = useState(null);
+  const [versions, setVersions]    = useState([]);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [activeTab, setActiveTab]  = useState('info');
 
   const load = useCallback(async (q = '') => {
     setLoading(true); setError('');
@@ -36,8 +129,12 @@ export default function Registration() {
   }, [query, load]);
 
   function openNew() {
-    setForm(EMPTY_FORM); setEdit(null); setShowForm(true);
+    setForm(EMPTY_FORM);
+    setErrors(EMPTY_ERRORS);
+    setEdit(null);
+    setShowForm(true);
   }
+
   function openEdit(p) {
     setForm({
       first_name: p.first_name, last_name: p.last_name,
@@ -47,30 +144,75 @@ export default function Registration() {
       address: p.address || { line1: '', city: '', state: '', pincode: '' },
       insurance: { provider_name: '', policy_number: '', group_number: '', valid_from: '', valid_to: '' },
     });
-    setEdit(p); setShowForm(true);
+    setErrors(EMPTY_ERRORS);
+    setEdit(p);
+    setShowForm(true);
   }
 
   function set(field, val) {
     setForm(f => ({ ...f, [field]: val }));
+    setErrors(e => ({ ...e, [field]: '' }));
   }
+
   function setAddr(field, val) {
     setForm(f => ({ ...f, address: { ...f.address, [field]: val } }));
+    setErrors(e => ({ ...e, address: { ...e.address, [field]: '' } }));
   }
+
   function setIns(field, val) {
     setForm(f => ({ ...f, insurance: { ...f.insurance, [field]: val } }));
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault(); setSaving(true); setError('');
+  async function loadVersions(patientId) {
+    setVersionLoading(true);
     try {
-      if (editPatient) {
-        await api.updatePatient(editPatient.patient_id, form);
-      } else {
-        await api.createPatient(form);
+      const versionData = await api.getPatientVersions(patientId);
+      setVersions(versionData);
+    } catch (e) {
+      console.error('Error loading versions:', e);
+      setVersions([]);
+    } finally {
+      setVersionLoading(false);
+    }
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+
+    const formErrors = validateForm(form);
+    if (hasErrors(formErrors)) {
+      setErrors(formErrors);
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        ...form,
+        phone: form.phone.replace(/\D/g, ''),
+      };
+
+      if (user?.provider_id) {
+        if (editPatient) {
+          payload.updated_by = user.provider_id;
+        } else {
+          payload.created_by = user.provider_id;
+        }
       }
-      setShowForm(false); load(query);
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+
+      if (editPatient) {
+        await api.updatePatient(editPatient.patient_id, payload);
+      } else {
+        await api.createPatient(payload);
+      }
+      setShowForm(false);
+      load(query);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const bloodGroups = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
@@ -129,7 +271,11 @@ export default function Registration() {
               </thead>
               <tbody>
                 {patients.map(p => (
-                  <tr key={p.patient_id} className="table-row" onClick={() => setSelected(p)}>
+                  <tr key={p.patient_id} className="table-row" onClick={() => {
+                    setSelected(p);
+                    setActiveTab('info');
+                    setVersions([]);
+                  }}>
                     <td className="td font-mono text-cyan-400 text-xs">{p.mrn}</td>
                     <td className="td">
                       <div className="font-medium text-slate-200">{p.first_name} {p.last_name}</div>
@@ -163,7 +309,7 @@ export default function Registration() {
       </div>
 
       {/* Patient detail modal */}
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Patient Details">
+      <Modal open={!!selected} onClose={() => setSelected(null)} title="Patient Details" width="max-w-3xl">
         {selected && (
           <div className="space-y-5">
             <div className="flex items-center gap-4">
@@ -171,31 +317,137 @@ export default function Registration() {
                 {selected.first_name[0]}{selected.last_name[0]}
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-slate-100">{selected.first_name} {selected.last_name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-slate-100">{selected.first_name} {selected.last_name}</h3>
+                  {versions.length > 0 && (
+                    <span className="badge bg-blue-500/20 text-blue-300 text-xs">v{versions.length}</span>
+                  )}
+                </div>
                 <p className="text-sm font-mono text-cyan-400">{selected.mrn}</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                ['Date of Birth', formatDate(selected.dob)],
-                ['Age', age(selected.dob)],
-                ['Gender', selected.gender],
-                ['Blood Group', selected.blood_group || '—'],
-                ['Phone', selected.phone || '—'],
-                ['Email', selected.email || '—'],
-                ['National ID', selected.national_id || '—'],
-              ].map(([l, v]) => (
-                <div key={l}>
-                  <p className="label">{l}</p>
-                  <p className="text-sm text-slate-200 capitalize">{v}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button className="btn-secondary" onClick={() => { setSelected(null); openEdit(selected); }}>
-                <Edit2 className="w-3.5 h-3.5 inline mr-1" /> Edit
+
+            {/* Tabs */}
+            <div className="flex gap-4 border-b border-slate-800">
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'info'
+                    ? 'border-cyan-400 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Information
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('history');
+                  if (versions.length === 0) {
+                    loadVersions(selected.patient_id);
+                  }
+                }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                  activeTab === 'history'
+                    ? 'border-cyan-400 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                <History className="w-4 h-4" />
+                History
               </button>
             </div>
+
+            {/* Info Tab */}
+            {activeTab === 'info' && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    ['Date of Birth', formatDate(selected.dob)],
+                    ['Age', age(selected.dob)],
+                    ['Gender', selected.gender],
+                    ['Blood Group', selected.blood_group || '—'],
+                    ['Phone', selected.phone || '—'],
+                    ['Email', selected.email || '—'],
+                    ['Aadhaar Number', selected.national_id || '—'],
+                  ].map(([l, v]) => (
+                    <div key={l}>
+                      <p className="label">{l}</p>
+                      <p className="text-sm text-slate-200 capitalize">{v}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Address */}
+                <div>
+                  <p className="label">Address</p>
+                  <p className="text-sm text-slate-200">
+                    {selected.address?.line1}{selected.address?.line1 && ', '}
+                    {selected.address?.city}{selected.address?.city && ', '}
+                    {selected.address?.state}{selected.address?.state && ' '}
+                    {selected.address?.pincode}
+                  </p>
+                </div>
+
+                {/* Audit Trail */}
+                <div className="pt-4 border-t border-slate-800 space-y-2">
+                  {selected.created_by && (
+                    <p className="text-xs text-slate-400">
+                      Created by: <span className="text-slate-300">{selected.created_by}</span>
+                    </p>
+                  )}
+                  {selected.updated_by && (
+                    <p className="text-xs text-slate-400">
+                      Last updated by: <span className="text-slate-300">{selected.updated_by}</span>
+                    </p>
+                  )}
+                  {selected.version && (
+                    <p className="text-xs text-slate-400">
+                      Version: <span className="text-slate-300">{selected.version}</span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button className="btn-secondary" onClick={() => { setSelected(null); openEdit(selected); }}>
+                    <Edit2 className="w-3.5 h-3.5 inline mr-1" /> Edit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* History Tab */}
+            {activeTab === 'history' && (
+              <div>
+                {versionLoading ? (
+                  <div className="flex justify-center py-8"><Spinner /></div>
+                ) : versions.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400">No version history available</div>
+                ) : (
+                  <div className="space-y-4">
+                    {versions.map((v, idx) => (
+                      <div key={idx} className="border border-slate-800 rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <p className="font-medium text-slate-200">Version {v.version_number}</p>
+                            <p className="text-xs text-slate-400">
+                              Changed by: <span className="text-slate-300">{v.changed_by || 'System'}</span>
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {formatDateTime(v.changed_at)}
+                            </p>
+                          </div>
+                        </div>
+                        {v.diff_summary && (
+                          <div className="text-sm text-slate-300 bg-slate-900/50 rounded p-2">
+                            {v.diff_summary}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -216,38 +468,79 @@ export default function Registration() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">First Name *</label>
-                <input className="input" required value={form.first_name}
-                  onChange={e => set('first_name', e.target.value)} placeholder="First name" />
+                <input
+                  className={`input ${errors.first_name ? 'border-red-500' : ''}`}
+                  value={form.first_name}
+                  onChange={e => set('first_name', e.target.value)}
+                  onBlur={() => {
+                    if (!form.first_name?.trim()) {
+                      setErrors(e => ({ ...e, first_name: 'First name is required' }));
+                    }
+                  }}
+                  placeholder="First name"
+                />
+                {errors.first_name && <p className="text-xs text-red-500 mt-1">{errors.first_name}</p>}
               </div>
               <div>
                 <label className="label">Last Name *</label>
-                <input className="input" required value={form.last_name}
-                  onChange={e => set('last_name', e.target.value)} placeholder="Last name" />
+                <input
+                  className={`input ${errors.last_name ? 'border-red-500' : ''}`}
+                  value={form.last_name}
+                  onChange={e => set('last_name', e.target.value)}
+                  onBlur={() => {
+                    if (!form.last_name?.trim()) {
+                      setErrors(e => ({ ...e, last_name: 'Last name is required' }));
+                    }
+                  }}
+                  placeholder="Last name"
+                />
+                {errors.last_name && <p className="text-xs text-red-500 mt-1">{errors.last_name}</p>}
               </div>
               <div>
                 <label className="label">Date of Birth *</label>
-                <input className="input" type="date" required value={form.dob}
-                  onChange={e => set('dob', e.target.value)} />
+                <input
+                  className={`input ${errors.dob ? 'border-red-500' : ''}`}
+                  type="date"
+                  value={form.dob}
+                  onChange={e => set('dob', e.target.value)}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+                {errors.dob && <p className="text-xs text-red-500 mt-1">{errors.dob}</p>}
               </div>
               <div>
                 <label className="label">Gender *</label>
-                <select className="select" value={form.gender} onChange={e => set('gender', e.target.value)}>
+                <select
+                  className={`select ${errors.gender ? 'border-red-500' : ''}`}
+                  value={form.gender}
+                  onChange={e => set('gender', e.target.value)}
+                >
+                  <option value="">-- Select Gender --</option>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
                   <option value="other">Other</option>
                 </select>
+                {errors.gender && <p className="text-xs text-red-500 mt-1">{errors.gender}</p>}
               </div>
               <div>
                 <label className="label">Blood Group</label>
-                <select className="select" value={form.blood_group} onChange={e => set('blood_group', e.target.value)}>
+                <select
+                  className="select"
+                  value={form.blood_group}
+                  onChange={e => set('blood_group', e.target.value)}
+                >
                   <option value="">Unknown</option>
                   {bloodGroups.map(b => <option key={b}>{b}</option>)}
                 </select>
               </div>
               <div>
-                <label className="label">National ID</label>
-                <input className="input" value={form.national_id}
-                  onChange={e => set('national_id', e.target.value)} placeholder="Aadhaar / PAN" />
+                <label className="label">Aadhaar Number</label>
+                <input
+                  className={`input ${errors.national_id ? 'border-red-500' : ''}`}
+                  value={form.national_id}
+                  onChange={e => set('national_id', e.target.value)}
+                  placeholder="12-digit Aadhaar number"
+                />
+                {errors.national_id && <p className="text-xs text-red-500 mt-1">{errors.national_id}</p>}
               </div>
             </div>
           </div>
@@ -257,26 +550,63 @@ export default function Registration() {
             <p className="section-title">Contact Information</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="label">Phone</label>
-                <input className="input" value={form.phone}
-                  onChange={e => set('phone', e.target.value)} placeholder="+91 XXXXX XXXXX" />
+                <label className="label">Phone *</label>
+                <input
+                  className={`input ${errors.phone ? 'border-red-500' : ''}`}
+                  value={form.phone}
+                  onChange={e => set('phone', e.target.value)}
+                  placeholder="+91 XXXXXXXXXX"
+                />
+                {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
               </div>
               <div>
                 <label className="label">Email</label>
-                <input className="input" type="email" value={form.email}
-                  onChange={e => set('email', e.target.value)} placeholder="email@example.com" />
+                <input
+                  className={`input ${errors.email ? 'border-red-500' : ''}`}
+                  type="email"
+                  value={form.email}
+                  onChange={e => set('email', e.target.value)}
+                  placeholder="email@example.com"
+                />
+                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
               </div>
               <div className="col-span-2">
-                <label className="label">Address</label>
-                <input className="input mb-2" value={form.address.line1}
-                  onChange={e => setAddr('line1', e.target.value)} placeholder="Street address" />
+                <label className="label">Address *</label>
+                <input
+                  className={`input mb-2 ${errors.address.line1 ? 'border-red-500' : ''}`}
+                  value={form.address.line1}
+                  onChange={e => setAddr('line1', e.target.value)}
+                  placeholder="Street address"
+                />
+                {errors.address.line1 && <p className="text-xs text-red-500 mb-2">{errors.address.line1}</p>}
                 <div className="grid grid-cols-3 gap-2">
-                  <input className="input" value={form.address.city}
-                    onChange={e => setAddr('city', e.target.value)} placeholder="City" />
-                  <input className="input" value={form.address.state}
-                    onChange={e => setAddr('state', e.target.value)} placeholder="State" />
-                  <input className="input" value={form.address.pincode}
-                    onChange={e => setAddr('pincode', e.target.value)} placeholder="PIN" />
+                  <div>
+                    <input
+                      className={`input ${errors.address.city ? 'border-red-500' : ''}`}
+                      value={form.address.city}
+                      onChange={e => setAddr('city', e.target.value)}
+                      placeholder="City"
+                    />
+                    {errors.address.city && <p className="text-xs text-red-500 mt-1">{errors.address.city}</p>}
+                  </div>
+                  <div>
+                    <input
+                      className={`input ${errors.address.state ? 'border-red-500' : ''}`}
+                      value={form.address.state}
+                      onChange={e => setAddr('state', e.target.value)}
+                      placeholder="State"
+                    />
+                    {errors.address.state && <p className="text-xs text-red-500 mt-1">{errors.address.state}</p>}
+                  </div>
+                  <div>
+                    <input
+                      className={`input ${errors.address.pincode ? 'border-red-500' : ''}`}
+                      value={form.address.pincode}
+                      onChange={e => setAddr('pincode', e.target.value)}
+                      placeholder="PIN"
+                    />
+                    {errors.address.pincode && <p className="text-xs text-red-500 mt-1">{errors.address.pincode}</p>}
+                  </div>
                 </div>
               </div>
             </div>
@@ -289,23 +619,39 @@ export default function Registration() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Provider Name</label>
-                  <input className="input" value={form.insurance.provider_name}
-                    onChange={e => setIns('provider_name', e.target.value)} placeholder="Star Health, HDFC Ergo..." />
+                  <input
+                    className="input"
+                    value={form.insurance.provider_name}
+                    onChange={e => setIns('provider_name', e.target.value)}
+                    placeholder="Star Health, HDFC Ergo..."
+                  />
                 </div>
                 <div>
                   <label className="label">Policy Number</label>
-                  <input className="input" value={form.insurance.policy_number}
-                    onChange={e => setIns('policy_number', e.target.value)} placeholder="Policy #" />
+                  <input
+                    className="input"
+                    value={form.insurance.policy_number}
+                    onChange={e => setIns('policy_number', e.target.value)}
+                    placeholder="Policy #"
+                  />
                 </div>
                 <div>
                   <label className="label">Valid From</label>
-                  <input className="input" type="date" value={form.insurance.valid_from}
-                    onChange={e => setIns('valid_from', e.target.value)} />
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.insurance.valid_from}
+                    onChange={e => setIns('valid_from', e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="label">Valid To</label>
-                  <input className="input" type="date" value={form.insurance.valid_to}
-                    onChange={e => setIns('valid_to', e.target.value)} />
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.insurance.valid_to}
+                    onChange={e => setIns('valid_to', e.target.value)}
+                  />
                 </div>
               </div>
             </div>

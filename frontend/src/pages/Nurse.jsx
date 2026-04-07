@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { HeartPulse, Thermometer, Wind, Activity, Plus, FileText, ChevronDown, ChevronUp } from 'lucide-react';
-import { api, formatDateTime, age } from '../lib/api';
+import { HeartPulse, Thermometer, Wind, Activity, Plus, FileText, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { api, formatDateTime, age, getVitalStatus, VITAL_STATUS_COLORS, VITAL_RANGES } from '../lib/api';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, StatCard } from '../components/ui';
 
 export default function Nurse() {
@@ -64,17 +64,60 @@ export default function Nurse() {
 
   function setVF(k, v) { setVitalsForm(f => ({ ...f, [k]: v })); }
 
-  const vitalIcon = (label, value, unit, warn) => (
-    <div className={`rounded-lg p-3 ${warn ? 'bg-red-500/10 border border-red-500/20' : 'bg-slate-800'}`}>
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className={`text-lg font-semibold ${warn ? 'text-red-400' : 'text-slate-100'}`}>
-        {value ?? '—'} <span className="text-xs font-normal text-slate-500">{unit}</span>
-      </p>
-    </div>
-  );
+  // Check if patient is in critical condition
+  const isPatientCritical = (adm) => {
+    // Find the latest vitals for this admission
+    const patientVitals = vitals.filter(v => v.admission_id === adm.admission_id);
+    if (!patientVitals.length) return false;
+    const lv = patientVitals[0];
+    return (lv.spo2 < 90) || (lv.systolic_bp < 80 || lv.systolic_bp > 180) || (lv.heart_rate < 40 || lv.heart_rate > 150) || (lv.temperature > 39.5);
+  };
 
-  const criticalSPO2 = (v) => v && v < 94;
-  const criticalBP = (s) => s && (s > 160 || s < 90);
+  // Get critical patients count
+  const criticalCount = admissions.filter(isPatientCritical).length;
+
+  // Sort admissions with critical patients first
+  const sortedAdmissions = [...admissions].sort((a, b) => {
+    const aCritical = isPatientCritical(a);
+    const bCritical = isPatientCritical(b);
+    if (aCritical && !bCritical) return -1;
+    if (!aCritical && bCritical) return 1;
+    return 0;
+  });
+
+  const vitalIcon = (label, value, unit, vital_key) => {
+    let status = 'normal';
+    let statusColor = 'bg-slate-800';
+
+    // Determine status based on vital key
+    if (vital_key === 'systolic_bp' && value) {
+      status = getVitalStatus('systolic_bp', value);
+      statusColor = VITAL_STATUS_COLORS[status];
+    } else if (vital_key === 'heart_rate' && value) {
+      status = getVitalStatus('heart_rate', value);
+      statusColor = VITAL_STATUS_COLORS[status];
+    } else if (vital_key === 'spo2' && value) {
+      status = getVitalStatus('spo2', value);
+      statusColor = VITAL_STATUS_COLORS[status];
+    } else if (vital_key === 'temperature' && value) {
+      status = getVitalStatus('temperature', value);
+      statusColor = VITAL_STATUS_COLORS[status];
+    } else if (vital_key === 'respiratory_rate' && value) {
+      status = getVitalStatus('respiratory_rate', value);
+      statusColor = VITAL_STATUS_COLORS[status];
+    }
+
+    const textColor = status === 'critical' ? 'text-red-400' : status === 'warning' ? 'text-orange-400' : 'text-slate-100';
+
+    return (
+      <div className={`rounded-lg p-3 ${statusColor}`}>
+        <p className="text-xs text-slate-500 mb-1">{label}</p>
+        <p className={`text-lg font-semibold ${textColor}`}>
+          {value ?? '—'} <span className="text-xs font-normal text-slate-500">{unit}</span>
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -82,7 +125,15 @@ export default function Nurse() {
       <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-950 overflow-hidden">
         <div className="px-4 py-4 border-b border-slate-800">
           <h2 className="font-semibold text-slate-200 mb-1">Nurse's Station</h2>
-          <p className="text-xs text-slate-500">{admissions.length} active patients</p>
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-xs text-slate-500">{admissions.length} active patients</p>
+            {criticalCount > 0 && (
+              <span className="badge badge-red text-xs flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {criticalCount} critical
+              </span>
+            )}
+          </div>
           <div className="mt-3">
             <label className="label">Logged in as</label>
             <select className="select text-xs" value={nurseId} onChange={e => setNurseId(e.target.value)}>
@@ -96,22 +147,35 @@ export default function Nurse() {
           ) : admissions.length === 0 ? (
             <EmptyState icon={HeartPulse} message="No active patients" />
           ) : (
-            admissions.map(a => (
-              <button key={a.admission_id} onClick={() => openPatient(a)}
-                className={`w-full text-left px-4 py-3.5 border-b border-slate-800 hover:bg-slate-900 transition-colors ${selected?.admission_id === a.admission_id ? 'bg-slate-900 border-l-2 border-l-cyan-500' : ''}`}>
-                <div className="flex items-start justify-between mb-1">
-                  <p className="text-sm font-medium text-slate-200 truncate">{a.patient_name}</p>
-                  <span className={`badge text-xs ml-1 shrink-0 ${a.ward_type === 'icu' ? 'badge-red' : 'badge-gray'}`}>
-                    {a.ward_type?.toUpperCase() || 'GEN'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">Bed {a.bed_number} · {a.ward_name}</p>
-                <p className="text-xs text-slate-600 mt-0.5">{age(a.dob)} · {a.gender}</p>
-                {a.last_vitals_at && (
-                  <p className="text-xs text-emerald-600 mt-1">Vitals: {formatDateTime(a.last_vitals_at)}</p>
-                )}
-              </button>
-            ))
+            sortedAdmissions.map(a => {
+              const isCritical = isPatientCritical(a);
+              return (
+                <button key={a.admission_id} onClick={() => openPatient(a)}
+                  className={`w-full text-left px-4 py-3.5 border-b border-slate-800 hover:bg-slate-900 transition-colors ${selected?.admission_id === a.admission_id ? 'bg-slate-900 border-l-2 border-l-cyan-500' : ''}`}>
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {isCritical && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0"></div>
+                      )}
+                      <p className="text-sm font-medium text-slate-200 truncate">{a.patient_name}</p>
+                    </div>
+                    <div className="flex items-center gap-1 ml-1 shrink-0">
+                      {isCritical && (
+                        <span className="badge badge-red text-xs">CRITICAL</span>
+                      )}
+                      <span className={`badge text-xs ${a.ward_type === 'icu' ? 'badge-red' : 'badge-gray'}`}>
+                        {a.ward_type?.toUpperCase() || 'GEN'}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">Bed {a.bed_number} · {a.ward_name}</p>
+                  <p className="text-xs text-slate-600 mt-0.5">{age(a.dob)} · {a.gender}</p>
+                  {a.last_vitals_at && (
+                    <p className="text-xs text-emerald-600 mt-1">Vitals: {formatDateTime(a.last_vitals_at)}</p>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -155,6 +219,25 @@ export default function Nurse() {
               )}
             </div>
 
+            {/* Vitals Legend */}
+            <div className="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+              <p className="text-xs font-medium text-slate-400 mb-2">Vital Status Legend</p>
+              <div className="flex gap-4 flex-wrap text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-green-500/20 border border-green-500/50"></div>
+                  <span className="text-slate-400">Normal</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-orange-500/20 border border-orange-500/50"></div>
+                  <span className="text-slate-400">Warning</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-red-500/20 border border-red-500/50"></div>
+                  <span className="text-slate-400">Critical</span>
+                </div>
+              </div>
+            </div>
+
             {/* Latest vitals summary */}
             {vitals.length > 0 && (() => {
               const lv = vitals[0];
@@ -162,10 +245,10 @@ export default function Nurse() {
                 <div className="mb-5">
                   <p className="section-title">Latest Vitals · {formatDateTime(lv.recorded_at)}</p>
                   <div className="grid grid-cols-4 gap-3">
-                    {vitalIcon('Blood Pressure', lv.systolic_bp && lv.diastolic_bp ? `${lv.systolic_bp}/${lv.diastolic_bp}` : null, 'mmHg', criticalBP(lv.systolic_bp))}
-                    {vitalIcon('Heart Rate', lv.heart_rate, 'bpm', lv.heart_rate > 100 || lv.heart_rate < 60)}
-                    {vitalIcon('SpO₂', lv.spo2, '%', criticalSPO2(lv.spo2))}
-                    {vitalIcon('Temperature', lv.temperature, '°C', lv.temperature > 38.5)}
+                    {vitalIcon('Blood Pressure', lv.systolic_bp && lv.diastolic_bp ? `${lv.systolic_bp}/${lv.diastolic_bp}` : null, 'mmHg', 'systolic_bp')}
+                    {vitalIcon('Heart Rate', lv.heart_rate, 'bpm', 'heart_rate')}
+                    {vitalIcon('SpO₂', lv.spo2, '%', 'spo2')}
+                    {vitalIcon('Temperature', lv.temperature, '°C', 'temperature')}
                   </div>
                 </div>
               );
@@ -192,18 +275,28 @@ export default function Nurse() {
                       </div>
                       <div className="grid grid-cols-4 gap-3 text-sm">
                         {[
-                          ['BP', v.systolic_bp && v.diastolic_bp ? `${v.systolic_bp}/${v.diastolic_bp} mmHg` : null],
-                          ['HR', v.heart_rate ? `${v.heart_rate} bpm` : null],
-                          ['SpO₂', v.spo2 ? `${v.spo2}%` : null],
-                          ['Temp', v.temperature ? `${v.temperature}°C` : null],
-                          ['RR', v.respiratory_rate ? `${v.respiratory_rate}/min` : null],
-                          ['Weight', v.weight_kg ? `${v.weight_kg} kg` : null],
-                        ].map(([l, val]) => val && (
-                          <div key={l}>
-                            <p className="text-xs text-slate-600">{l}</p>
-                            <p className="text-slate-300">{val}</p>
-                          </div>
-                        ))}
+                          { key: 'systolic_bp', label: 'BP', value: v.systolic_bp && v.diastolic_bp ? `${v.systolic_bp}/${v.diastolic_bp} mmHg` : null },
+                          { key: 'heart_rate', label: 'HR', value: v.heart_rate ? `${v.heart_rate} bpm` : null },
+                          { key: 'spo2', label: 'SpO₂', value: v.spo2 ? `${v.spo2}%` : null },
+                          { key: 'temperature', label: 'Temp', value: v.temperature ? `${v.temperature}°C` : null },
+                          { key: 'respiratory_rate', label: 'RR', value: v.respiratory_rate ? `${v.respiratory_rate}/min` : null },
+                          { key: null, label: 'Weight', value: v.weight_kg ? `${v.weight_kg} kg` : null },
+                        ].map(({ key, label, value }) => {
+                          if (!value) return null;
+
+                          let statusColor = 'text-slate-300';
+                          if (key) {
+                            const status = getVitalStatus(key, key === 'systolic_bp' ? v.systolic_bp : key === 'heart_rate' ? v.heart_rate : key === 'spo2' ? v.spo2 : key === 'temperature' ? v.temperature : v.respiratory_rate);
+                            statusColor = status === 'critical' ? 'text-red-400' : status === 'warning' ? 'text-orange-400' : 'text-green-400';
+                          }
+
+                          return (
+                            <div key={label}>
+                              <p className="text-xs text-slate-600">{label}</p>
+                              <p className={statusColor}>{value}</p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))

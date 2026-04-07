@@ -48,12 +48,13 @@ router.get('/providers', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Active admissions list
+// Active admissions list (ENHANCED with discharge approval fields)
 router.get('/admissions', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT a.admission_id, a.admission_number, a.admitted_at,
               a.admission_type, a.status, a.chief_complaint, a.diagnosis_primary,
+              a.discharge_approved, a.discharge_decision,
               p.first_name || ' ' || p.last_name AS patient_name,
               p.mrn, p.dob, p.gender,
               b.bed_number, w.ward_name,
@@ -70,13 +71,29 @@ router.get('/admissions', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Admit patient
+// Admit patient (ENHANCED with emergency ward enforcement)
 router.post('/admit', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { patient_id, bed_id, admitting_provider_id, attending_provider_id,
-            admission_type, admission_source, chief_complaint, diagnosis_primary } = req.body;
+            admission_type, admission_source, chief_complaint, diagnosis_primary, performed_by } = req.body;
+
+    // FEATURE A: Emergency ward enforcement
+    if (admission_type === 'emergency' && bed_id) {
+      const { rows: [bed] } = await client.query(
+        `SELECT w.ward_type FROM beds b
+         JOIN wards w ON w.ward_id = b.ward_id
+         WHERE b.bed_id = $1`,
+        [bed_id]
+      );
+      if (!bed || bed.ward_type !== 'emergency') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Emergency admissions must be assigned to emergency ward beds'
+        });
+      }
+    }
 
     // Auto admission number
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -104,11 +121,11 @@ router.post('/admit', async (req, res, next) => {
       );
     }
 
-    // Audit log
+    // Audit log (ENHANCED with performed_by)
     await client.query(
-      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
-       VALUES ($1,'ADMIT','Patient admitted via admission desk')`,
-      [admission.admission_id]
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description, performed_by)
+       VALUES ($1,'ADMIT','Patient admitted via admission desk',$2)`,
+      [admission.admission_id, performed_by || null]
     );
 
     await client.query('COMMIT');
@@ -119,17 +136,26 @@ router.post('/admit', async (req, res, next) => {
   } finally { client.release(); }
 });
 
-// Discharge
+// Discharge (ENHANCED with doctor approval check)
 router.post('/discharge', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { admission_id, discharging_provider_id, discharge_disposition,
-            discharge_condition, discharge_summary, follow_up_required, follow_up_date } = req.body;
+            discharge_condition, discharge_summary, follow_up_required, follow_up_date, performed_by } = req.body;
 
+    // FEATURE B: Doctor approval check
     const { rows: [admission] } = await client.query(
-      `SELECT bed_id FROM admissions WHERE admission_id=$1`, [admission_id]
+      `SELECT bed_id, discharge_approved FROM admissions WHERE admission_id=$1`,
+      [admission_id]
     );
+
+    if (!admission?.discharge_approved) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'Discharge requires doctor approval. Please request approval from the attending physician.'
+      });
+    }
 
     await client.query(
       `INSERT INTO discharges
@@ -153,10 +179,11 @@ router.post('/discharge', async (req, res, next) => {
       );
     }
 
+    // Audit log (ENHANCED with performed_by)
     await client.query(
-      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
-       VALUES ($1,'DISCHARGE','Patient discharged')`,
-      [admission_id]
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description, performed_by)
+       VALUES ($1,'DISCHARGE','Patient discharged',$2)`,
+      [admission_id, performed_by || null]
     );
 
     await client.query('COMMIT');
@@ -167,7 +194,7 @@ router.post('/discharge', async (req, res, next) => {
   } finally { client.release(); }
 });
 
-// ─── Internal Transfer ──────────────────────────────────────
+// Internal Transfer (ENHANCED with performed_by in audit log)
 router.post('/transfer', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -211,11 +238,11 @@ router.post('/transfer', async (req, res, next) => {
       [admission_id, from_bed_id || null, to_bed_id, reason || null, ordered_by || null]
     );
 
-    // ADT audit
+    // ADT audit (ENHANCED with performed_by)
     await client.query(
-      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
-       VALUES ($1,'TRANSFER','Internal patient transfer to new bed')`,
-      [admission_id]
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description, performed_by)
+       VALUES ($1,'TRANSFER','Internal patient transfer to new bed',$2)`,
+      [admission_id, ordered_by || null]
     );
 
     await client.query('COMMIT');
@@ -226,7 +253,7 @@ router.post('/transfer', async (req, res, next) => {
   } finally { client.release(); }
 });
 
-// ─── External Transfer ──────────────────────────────────────
+// External Transfer (ENHANCED with performed_by in audit log)
 router.post('/external-transfer', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -262,11 +289,11 @@ router.post('/external-transfer', async (req, res, next) => {
       [admission_id, admission?.bed_id || null, to_facility_name, to_facility_address || null, reason || null, ordered_by || null]
     );
 
-    // ADT audit
+    // ADT audit (ENHANCED with performed_by)
     await client.query(
-      `INSERT INTO adt_audit_log (admission_id, event_type, event_description)
-       VALUES ($1,'TRANSFER','External transfer to ' || $2)`,
-      [admission_id, to_facility_name]
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description, performed_by)
+       VALUES ($1,'TRANSFER','External transfer to ' || $2,$3)`,
+      [admission_id, to_facility_name, ordered_by || null]
     );
 
     await client.query('COMMIT');
@@ -277,7 +304,7 @@ router.post('/external-transfer', async (req, res, next) => {
   } finally { client.release(); }
 });
 
-// ─── Fetch transfers for an admission ───────────────────────
+// Fetch transfers for an admission
 router.get('/transfers/:admissionId', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
@@ -298,5 +325,25 @@ router.get('/transfers/:admissionId', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-export default router;
+// FEATURE C: Get approval status for a specific admission
+router.get('/admissions/:id/approval-status', async (req, res, next) => {
+  try {
+    const { rows: [approval] } = await pool.query(
+      `SELECT a.admission_id, a.discharge_approved, a.discharge_approved_by,
+              a.discharge_approved_at, a.discharge_decision, a.discharge_notes,
+              pr.full_name AS discharge_approved_by_name
+       FROM admissions a
+       LEFT JOIN providers pr ON pr.provider_id = a.discharge_approved_by
+       WHERE a.admission_id = $1`,
+      [req.params.id]
+    );
 
+    if (!approval) {
+      return res.status(404).json({ error: 'Admission not found' });
+    }
+
+    res.json(approval);
+  } catch (err) { next(err); }
+});
+
+export default router;

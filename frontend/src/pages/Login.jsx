@@ -4,19 +4,22 @@ import { Activity, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const ROLE_COLORS = {
-  doctor:         'text-emerald-400 bg-emerald-500/10',
-  nurse:          'text-pink-400 bg-pink-500/10',
-  lab_technician: 'text-amber-400 bg-amber-500/10',
-  admin:          'text-violet-400 bg-violet-500/10',
-  receptionist:   'text-cyan-400 bg-cyan-500/10',
+  doctor:            'text-emerald-400 bg-emerald-500/10',
+  nurse:             'text-pink-400 bg-pink-500/10',
+  lab_technician:    'text-amber-400 bg-amber-500/10',
+  admin:             'text-violet-400 bg-violet-500/10',
+  registration_desk: 'text-cyan-400 bg-cyan-500/10',
+  admission_desk:    'text-blue-400 bg-blue-500/10',
 };
 
 const DEMO_ACCOUNTS = [
-  { code: 'DOC-001', role: 'Doctor',          label: 'Dr. Arjun Mehta',        color: 'text-emerald-400' },
-  { code: 'DOC-002', role: 'Doctor',          label: 'Dr. Priya Krishnaswamy', color: 'text-emerald-400' },
-  { code: 'NRS-001', role: 'Nurse',           label: 'Nurse Kavitha Ramesh',   color: 'text-pink-400'   },
-  { code: 'LAB-001', role: 'Lab Technician',  label: 'Ravi Shankar Kumar',     color: 'text-amber-400'  },
-  { code: 'ADM-001', role: 'Admin',           label: 'Prakash Iyer',           color: 'text-violet-400' },
+  { code: 'DOC-001', role: 'Doctor',            label: 'Dr. Arjun Mehta',         color: 'text-emerald-400' },
+  { code: 'DOC-002', role: 'Doctor',            label: 'Dr. Priya Krishnaswamy',  color: 'text-emerald-400' },
+  { code: 'NRS-001', role: 'Nurse',             label: 'Nurse Kavitha Ramesh',    color: 'text-pink-400'    },
+  { code: 'LAB-001', role: 'Lab Technician',    label: 'Ravi Shankar Kumar',      color: 'text-amber-400'   },
+  { code: 'ADM-001', role: 'Admin',             label: 'Prakash Iyer',            color: 'text-violet-400'  },
+  { code: 'REG-001', role: 'Registration Desk', label: 'Sunita Devi',             color: 'text-cyan-400'    },
+  { code: 'ADT-001', role: 'Admission Desk',    label: 'Rajesh Sharma',           color: 'text-blue-400'    },
 ];
 
 export default function Login() {
@@ -47,11 +50,13 @@ export default function Login() {
 
       // Route based on role
       const roleRoutes = {
-        doctor:         '/doctor',
-        nurse:          '/nurse',
-        lab_technician: '/lab',
-        admin:          '/registration',
-        receptionist:   '/registration',
+        doctor:            '/doctor',
+        nurse:             '/nurse',
+        lab_technician:    '/lab',
+        admin:             '/admin',
+        registration_desk: '/registration',
+        admission_desk:    '/admission',
+        receptionist:      '/registration',
       };
       navigate(roleRoutes[data.user.role] || '/registration', { replace: true });
     } catch (err) {
@@ -65,6 +70,16 @@ export default function Login() {
     setProviderCode(code);
     setPassword('password123');
     setError('');
+  }
+
+  function getColorForCode(code) {
+    if (code.startsWith('DOC')) return 'doctor';
+    if (code.startsWith('NRS')) return 'nurse';
+    if (code.startsWith('LAB')) return 'lab_technician';
+    if (code.startsWith('ADM') && code !== 'ADT-001') return 'admin';
+    if (code.startsWith('REG')) return 'registration_desk';
+    if (code.startsWith('ADT')) return 'admission_desk';
+    return 'admin';
   }
 
   return (
@@ -93,7 +108,7 @@ export default function Login() {
               { icon: '🏥', label: 'ADT Module', desc: 'Admissions, Discharges & Transfers' },
               { icon: '🧪', label: 'LIS Module', desc: 'Lab orders, specimens & results' },
               { icon: '🔄', label: 'HIE / FHIR R4', desc: 'Real-time HL7 health data exchange' },
-              { icon: '🔐', label: 'Role-based Access', desc: 'Doctor · Nurse · Lab Tech · Admin' },
+              { icon: '🔐', label: 'Role-based Access', desc: 'Doctor · Nurse · Lab Tech · Admin · Registration · Admission' },
             ].map(({ icon, label, desc }) => (
               <div key={label} className="flex items-center gap-3 text-sm">
                 <span className="text-xl">{icon}</span>
@@ -107,7 +122,7 @@ export default function Login() {
         </div>
 
         <p className="text-xs text-slate-700">
-          FHIR R4 · HL7 v2 · HL7 v3 · SNOMED CT · LOINC
+          v3.0.0 · FHIR R4 · HL7 v2 · HL7 v3 · SNOMED CT · LOINC
         </p>
       </div>
 
@@ -191,7 +206,7 @@ export default function Login() {
                   className="w-full flex items-center justify-between bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50
                              rounded-lg px-4 py-2.5 text-sm transition-all group">
                   <div className="flex items-center gap-3">
-                    <span className={`font-mono text-xs px-2 py-0.5 rounded ${ROLE_COLORS[acc.code.startsWith('DOC') ? 'doctor' : acc.code.startsWith('NRS') ? 'nurse' : acc.code.startsWith('LAB') ? 'lab_technician' : 'admin'] || 'text-slate-400'}`}>
+                    <span className={`font-mono text-xs px-2 py-0.5 rounded ${ROLE_COLORS[getColorForCode(acc.code)]}`}>
                       {acc.code}
                     </span>
                     <span className="text-slate-400">{acc.label}</span>

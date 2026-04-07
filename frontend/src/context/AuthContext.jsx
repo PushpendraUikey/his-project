@@ -46,13 +46,17 @@ export function useAuth() {
   return ctx;
 }
 
-// Role-based access: which routes each role can see
+// ── Role-based access: which routes each role can see ──────
+// Strict RBAC — no cross-role UI access
 export const ROLE_ACCESS = {
-  admin:          ['registration', 'admission', 'nurse', 'doctor', 'lab', 'hie'],
-  doctor:         ['doctor', 'lab', 'hie'],
-  nurse:          ['nurse', 'admission', 'hie'],
-  lab_technician: ['lab', 'hie'],
-  receptionist:   ['registration', 'admission'],
+  admin:             ['admin', 'hie'],
+  doctor:            ['doctor'],
+  nurse:             ['nurse'],
+  lab_technician:    ['lab'],
+  registration_desk: ['registration'],
+  admission_desk:    ['admission'],
+  // Legacy support
+  receptionist:      ['registration', 'admission'],
 };
 
 export function canAccess(role, module) {

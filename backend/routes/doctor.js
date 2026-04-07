@@ -10,6 +10,7 @@ router.get('/patients', async (req, res, next) => {
     let query = `
       SELECT a.admission_id, a.admission_number, a.admitted_at,
              a.chief_complaint, a.diagnosis_primary, a.status,
+             a.discharge_approved, a.discharge_decision,
              p.patient_id, p.first_name || ' ' || p.last_name AS patient_name,
              p.mrn, p.dob, p.gender, p.blood_group,
              b.bed_number, w.ward_name,
@@ -42,12 +43,14 @@ router.get('/patient/:admissionId', async (req, res, next) => {
         `SELECT a.*, p.first_name||' '||p.last_name AS patient_name,
                 p.mrn, p.dob, p.gender, p.blood_group,
                 b.bed_number, w.ward_name,
-                pr.full_name AS attending_doctor
+                pr.full_name AS attending_doctor,
+                apr.full_name AS discharge_approved_by_doctor
          FROM admissions a
          JOIN patients p ON p.patient_id=a.patient_id
          LEFT JOIN beds b ON b.bed_id=a.bed_id
          LEFT JOIN wards w ON w.ward_id=b.ward_id
          LEFT JOIN providers pr ON pr.provider_id=a.attending_provider_id
+         LEFT JOIN providers apr ON apr.provider_id=a.discharge_approved_by
          WHERE a.admission_id=$1`, [id]),
       pool.query(
         `SELECT * FROM vital_signs WHERE admission_id=$1 ORDER BY recorded_at DESC LIMIT 10`, [id]),
@@ -148,6 +151,85 @@ router.get('/doctors', async (_req, res, next) => {
     const { rows } = await pool.query(
       `SELECT provider_id, full_name, specialty FROM providers WHERE role='doctor' AND is_active=true ORDER BY full_name`
     );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Approve discharge decision
+router.post('/approve-discharge', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { admission_id, doctor_id, decision, notes } = req.body;
+
+    // Validate decision
+    if (!['discharge', 'transfer', 'continue'].includes(decision)) {
+      return res.status(400).json({ error: 'Invalid decision. Must be one of: discharge, transfer, continue' });
+    }
+
+    // Determine discharge_approved boolean and event_type
+    const discharge_approved = decision === 'discharge' || decision === 'transfer';
+    const event_type = decision === 'discharge' ? 'APPROVE_DISCHARGE' :
+                       decision === 'transfer' ? 'APPROVE_TRANSFER' :
+                       'APPROVE_CONTINUE';
+
+    // Update admissions table
+    const { rows: [updatedAdmission] } = await client.query(
+      `UPDATE admissions
+       SET discharge_approved = $1,
+           discharge_approved_by = $2,
+           discharge_approved_at = NOW(),
+           discharge_decision = $3,
+           discharge_notes = $4
+       WHERE admission_id = $5
+       RETURNING *`,
+      [discharge_approved, doctor_id, decision, notes || null, admission_id]
+    );
+
+    if (!updatedAdmission) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Admission not found' });
+    }
+
+    // Log to adt_audit_log
+    await client.query(
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_details, user_id, timestamp)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [admission_id, event_type, { decision, notes }, doctor_id]
+    );
+
+    await client.query('COMMIT');
+    res.json(updatedAdmission);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally { client.release(); }
+});
+
+// Pending discharge approvals
+router.get('/pending-approvals', async (req, res, next) => {
+  try {
+    const { doctor_id } = req.query;
+    let query = `
+      SELECT a.admission_id, a.admission_number, a.admitted_at,
+             a.chief_complaint, a.ward_id, a.bed_id,
+             p.patient_id, p.first_name || ' ' || p.last_name AS patient_name,
+             p.mrn,
+             b.bed_number, w.ward_name,
+             pr.full_name AS attending_doctor
+      FROM admissions a
+      JOIN patients p ON p.patient_id = a.patient_id
+      LEFT JOIN beds b ON b.bed_id = a.bed_id
+      LEFT JOIN wards w ON w.ward_id = b.ward_id
+      LEFT JOIN providers pr ON pr.provider_id = a.attending_provider_id
+      WHERE a.status = 'admitted' AND a.discharge_approved IS NOT TRUE`;
+    const params = [];
+    if (doctor_id) {
+      params.push(doctor_id);
+      query += ` AND a.attending_provider_id = $${params.length}`;
+    }
+    query += ' ORDER BY a.admitted_at ASC';
+    const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (err) { next(err); }
 });

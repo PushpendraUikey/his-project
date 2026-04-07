@@ -11,6 +11,8 @@ import Nurse from './pages/Nurse';
 import Doctor from './pages/Doctor';
 import Lab from './pages/Lab';
 import HIE from './pages/HIE';
+import Admin from './pages/Admin';
+import ChangePassword from './pages/ChangePassword';
 
 const ROUTE_MAP = {
   registration: '/registration',
@@ -19,6 +21,7 @@ const ROUTE_MAP = {
   doctor:       '/doctor',
   lab:          '/lab',
   hie:          '/hie',
+  admin:        '/admin',
 };
 
 // Route guard: redirect to login if not authenticated
@@ -46,13 +49,15 @@ function RequireRole({ module, children }) {
 function RoleRedirect() {
   const { user } = useAuth();
   const roleDefaults = {
-    doctor:         '/doctor',
-    nurse:          '/nurse',
-    lab_technician: '/lab',
-    admin:          '/registration',
-    receptionist:   '/registration',
+    doctor:            '/doctor',
+    nurse:             '/nurse',
+    lab_technician:    '/lab',
+    admin:             '/admin',
+    registration_desk: '/registration',
+    admission_desk:    '/admission',
+    receptionist:      '/registration',
   };
-  return <Navigate to={roleDefaults[user?.role] || '/registration'} replace />;
+  return <Navigate to={roleDefaults[user?.role] || '/login'} replace />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -88,6 +93,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="hie" element={
               <RequireRole module="hie"><HIE /></RequireRole>
             } />
+            <Route path="admin" element={
+              <RequireRole module="admin"><Admin /></RequireRole>
+            } />
+            <Route path="change-password" element={<ChangePassword />} />
           </Route>
 
           {/* Catch-all */}

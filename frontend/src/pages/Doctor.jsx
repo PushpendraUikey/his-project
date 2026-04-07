@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Stethoscope, FlaskConical, ClipboardList, ChevronRight, Plus, AlertCircle, Network, ArrowRightLeft } from 'lucide-react';
+import { Stethoscope, FlaskConical, ClipboardList, ChevronRight, Plus, AlertCircle, Network, ArrowRightLeft, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, PriorityBadge } from '../components/ui';
@@ -30,6 +30,11 @@ export default function Doctor() {
   const [txFacility, setTxFacility]   = useState('');
   const [txAddress, setTxAddress]     = useState('');
   const [txReason, setTxReason]       = useState('');
+  // Approval workflow
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalDecision, setApprovalDecision] = useState('');
+  const [approvalNotes, setApprovalNotes] = useState('');
+  const [approvingSaving, setApprovingSaving] = useState(false);
 
   const showFhir = (msg) => { setFhirToast(msg); setTimeout(() => setFhirToast(''), 4000); };
 
@@ -124,6 +129,28 @@ export default function Doctor() {
     finally { setSaving(false); }
   }
 
+  async function submitApproval(e) {
+    e.preventDefault(); setApprovingSaving(true); setError('');
+    try {
+      await api.approveDischarge({
+        admission_id: selected.admission_id,
+        doctor_id: user?.provider_id || doctorId,
+        decision: approvalDecision,
+        notes: approvalNotes,
+      });
+      // Refresh context to show updated approval status
+      const ctx = await api.getPatientContext(selected.admission_id);
+      setContext(ctx);
+      // Reload patient list to update badges
+      load();
+      setShowApprovalModal(false);
+      setApprovalDecision('');
+      setApprovalNotes('');
+      showFhir(`✅ Patient marked for ${approvalDecision}`);
+    } catch (e) { setError(e.message); }
+    finally { setApprovingSaving(false); }
+  }
+
   function toggleTest(id) {
     setOrderForm(f => ({
       ...f,
@@ -138,6 +165,9 @@ export default function Doctor() {
 
   const flagColor = { H:'text-red-400', HH:'text-red-500', L:'text-blue-400', LL:'text-blue-500', A:'text-amber-400', POS:'text-red-400', NEG:'text-emerald-400', N:'text-emerald-400' };
 
+  // Count pending approvals (patients not yet approved)
+  const pendingApprovalsCount = patients.filter(p => !p.discharge_approved).length;
+
   return (
     <div className="flex h-screen overflow-hidden relative">
       {/* FHIR Toast */}
@@ -150,14 +180,27 @@ export default function Doctor() {
       {/* Patient list */}
       <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-950 overflow-hidden">
         <div className="px-4 py-4 border-b border-slate-800">
-          <h2 className="font-semibold text-slate-200 mb-1">Doctor's View</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-200">Doctor's View</h2>
+            {pendingApprovalsCount > 0 && (
+              <span className="badge badge-red text-xs">{pendingApprovalsCount} pending</span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">{patients.length} assigned patients</p>
           <div className="mt-3">
-            <label className="label">Viewing as</label>
-            <select className="select text-xs" value={doctorId} onChange={e => setDoctorId(e.target.value)}>
-              <option value="">All Doctors</option>
-              {doctors.map(d => <option key={d.provider_id} value={d.provider_id}>{d.full_name}</option>)}
-            </select>
+            {user?.role === 'doctor' ? (
+              <div className="text-xs text-slate-600">
+                Viewing as: <span className="text-slate-300 font-medium">{user.full_name || 'You'}</span>
+              </div>
+            ) : (
+              <>
+                <label className="label">Viewing as</label>
+                <select className="select text-xs" value={doctorId} onChange={e => setDoctorId(e.target.value)}>
+                  <option value="">All Doctors</option>
+                  {doctors.map(d => <option key={d.provider_id} value={d.provider_id}>{d.full_name}</option>)}
+                </select>
+              </>
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -171,9 +214,17 @@ export default function Doctor() {
                 className={`w-full text-left px-4 py-3.5 border-b border-slate-800 hover:bg-slate-900 transition-colors ${selected?.admission_id === a.admission_id ? 'bg-slate-900 border-l-2 border-l-emerald-500' : ''}`}>
                 <div className="flex items-start justify-between mb-1">
                   <p className="text-sm font-medium text-slate-200 truncate">{a.patient_name}</p>
-                  {parseInt(a.pending_orders) > 0 && (
-                    <span className="badge badge-yellow text-xs ml-1 shrink-0">{a.pending_orders} pending</span>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    {a.discharge_approved && a.discharge_decision === 'discharge' && (
+                      <span className="badge badge-green text-xs">Discharge OK</span>
+                    )}
+                    {a.discharge_approved && a.discharge_decision === 'transfer' && (
+                      <span className="badge badge-amber text-xs">Transfer OK</span>
+                    )}
+                    {parseInt(a.pending_orders) > 0 && (
+                      <span className="badge badge-yellow text-xs">{a.pending_orders} pending</span>
+                    )}
+                  </div>
                 </div>
                 <p className="text-xs text-slate-500">Bed {a.bed_number} · {a.ward_name}</p>
                 <p className="text-xs text-slate-600">{age(a.dob)} · {a.gender} · {a.mrn}</p>
@@ -236,6 +287,53 @@ export default function Doctor() {
                   )}
                 </div>
               )}
+
+              {/* Approval Status Section */}
+              <div className="mt-4 pt-4 border-t border-slate-800">
+                {context.admission.discharge_approved ? (
+                  <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-emerald-300">
+                        Approved for {context.admission.discharge_decision === 'transfer' ? 'Transfer' : 'Discharge'}
+                      </p>
+                      <p className="text-xs text-emerald-300/70 mt-0.5">
+                        By Dr. {context.admission.discharge_approved_by_doctor} on {formatDateTime(context.admission.discharge_approved_at)}
+                      </p>
+                      {context.admission.discharge_notes && (
+                        <p className="text-xs text-emerald-300/60 mt-1 italic">{context.admission.discharge_notes}</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-slate-400">Awaiting Approval Decision</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => { setApprovalDecision('discharge'); setShowApprovalModal(true); }}
+                        className="btn-sm bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 flex items-center justify-center gap-2 py-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span className="text-xs">Approve Discharge</span>
+                      </button>
+                      <button
+                        onClick={() => { setApprovalDecision('transfer'); setShowApprovalModal(true); }}
+                        className="btn-sm bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 flex items-center justify-center gap-2 py-2"
+                      >
+                        <ArrowRightLeft className="w-4 h-4" />
+                        <span className="text-xs">Approve Transfer</span>
+                      </button>
+                      <button
+                        onClick={() => { setApprovalDecision('continue'); setShowApprovalModal(true); }}
+                        className="btn-sm bg-blue-500/20 border border-blue-500/30 text-blue-300 hover:bg-blue-500/30 flex items-center justify-center gap-2 py-2"
+                      >
+                        <Clock className="w-4 h-4" />
+                        <span className="text-xs">Continue Stay</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Latest vitals strip */}
@@ -451,7 +549,7 @@ export default function Doctor() {
         </form>
       </Modal>
 
-      {/* ── Transfer Modal ────────────────────────────────────── */}
+      {/* Transfer Modal */}
       <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Suggest Patient Transfer" width="max-w-xl">
         {selected && (
           <form onSubmit={submitTransfer} className="space-y-4">
@@ -517,6 +615,33 @@ export default function Doctor() {
                 Confirm Transfer
               </button>
               <button type="button" className="btn-secondary" onClick={() => setShowTransfer(false)}>Cancel</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Approval Modal */}
+      <Modal open={showApprovalModal} onClose={() => setShowApprovalModal(false)} title={`Approve ${approvalDecision === 'discharge' ? 'Discharge' : approvalDecision === 'transfer' ? 'Transfer' : 'Continue Stay'}`} width="max-w-md">
+        {selected && (
+          <form onSubmit={submitApproval} className="space-y-4">
+            <ErrorBanner message={error} />
+            <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-slate-200">{selected.patient_name}</p>
+              <p className="text-slate-500 text-xs">{selected.mrn}</p>
+            </div>
+
+            <div>
+              <label className="label">Reason / Notes</label>
+              <textarea className="input h-24 resize-none" placeholder="Clinical reason or notes for this decision..."
+                value={approvalNotes} onChange={e => setApprovalNotes(e.target.value)} />
+            </div>
+
+            <div className="flex gap-3">
+              <button type="submit" disabled={approvingSaving} className="btn-primary flex items-center gap-2 flex-1">
+                {approvingSaving ? <Spinner className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                Confirm
+              </button>
+              <button type="button" className="btn-secondary flex-1" onClick={() => setShowApprovalModal(false)}>Cancel</button>
             </div>
           </form>
         )}

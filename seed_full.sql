@@ -46,39 +46,44 @@ INSERT INTO beds (bed_id, ward_id, bed_number, bed_type, status) VALUES
   ('b0000001-0000-0000-0000-000000000020','a1000001-0000-0000-0000-000000000007','EM-03','standard','available');
 
 -- ── 3. PROVIDERS ──────────────────────────────────────────
-ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) DEFAULT '$2b$10$UPBPci4kjinbf0SqT/1By.uIQFVg1L2FIW0LwM75XcSwdUjwMwi2S';
+ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_must_change BOOLEAN DEFAULT FALSE;
 
-INSERT INTO providers (provider_id, provider_code, full_name, specialty, license_number, role) VALUES
+INSERT INTO providers (provider_id, provider_code, full_name, specialty, license_number, role, password_hash, password_must_change) VALUES
   -- Doctors
-  ('c0000001-0000-0000-0000-000000000001','DOC-001','Dr. Arjun Mehta',        'Internal Medicine',  'MH-MED-10234', 'doctor'),
-  ('c0000001-0000-0000-0000-000000000002','DOC-002','Dr. Priya Krishnaswamy', 'Cardiology',         'MH-CAR-20871', 'doctor'),
-  ('c0000001-0000-0000-0000-000000000003','DOC-003','Dr. Rohan Desai',        'Surgery',            'MH-SRG-30145', 'doctor'),
-  ('c0000001-0000-0000-0000-000000000004','DOC-004','Dr. Sneha Patel',        'Obstetrics',         'MH-OBS-40562', 'doctor'),
-  ('c0000001-0000-0000-0000-000000000005','DOC-005','Dr. Vikram Nair',        'Paediatrics',        'MH-PED-50789', 'doctor'),
-  ('c0000001-0000-0000-0000-000000000006','DOC-006','Dr. Ananya Sharma',      'Critical Care',      'MH-CCM-60312', 'doctor'),
+  ('c0000001-0000-0000-0000-000000000001','DOC-001','Dr. Arjun Mehta',        'Internal Medicine',  'MH-MED-10234', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000002','DOC-002','Dr. Priya Krishnaswamy', 'Cardiology',         'MH-CAR-20871', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000003','DOC-003','Dr. Rohan Desai',        'Surgery',            'MH-SRG-30145', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000004','DOC-004','Dr. Sneha Patel',        'Obstetrics',         'MH-OBS-40562', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000005','DOC-005','Dr. Vikram Nair',        'Paediatrics',        'MH-PED-50789', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000006','DOC-006','Dr. Ananya Sharma',      'Critical Care',      'MH-CCM-60312', 'doctor', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
   -- Nurses
-  ('c0000001-0000-0000-0000-000000000011','NRS-001','Nurse Kavitha Ramesh',   NULL, 'MH-NRS-11001', 'nurse'),
-  ('c0000001-0000-0000-0000-000000000012','NRS-002','Nurse Deepa Pillai',     NULL, 'MH-NRS-11002', 'nurse'),
-  ('c0000001-0000-0000-0000-000000000013','NRS-003','Nurse Suresh Babu',      NULL, 'MH-NRS-11003', 'nurse'),
-  ('c0000001-0000-0000-0000-000000000014','NRS-004','Nurse Amita Singh',      NULL, 'MH-NRS-11004', 'nurse'),
+  ('c0000001-0000-0000-0000-000000000011','NRS-001','Nurse Kavitha Ramesh',   NULL, 'MH-NRS-11001', 'nurse', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000012','NRS-002','Nurse Deepa Pillai',     NULL, 'MH-NRS-11002', 'nurse', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000013','NRS-003','Nurse Suresh Babu',      NULL, 'MH-NRS-11003', 'nurse', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000014','NRS-004','Nurse Amita Singh',      NULL, 'MH-NRS-11004', 'nurse', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
   -- Lab Technicians
-  ('c0000001-0000-0000-0000-000000000021','LAB-001','Ravi Shankar Kumar',     NULL, 'MH-LAB-21001', 'lab_technician'),
-  ('c0000001-0000-0000-0000-000000000022','LAB-002','Meena Tiwari',           NULL, 'MH-LAB-21002', 'lab_technician'),
+  ('c0000001-0000-0000-0000-000000000021','LAB-001','Ravi Shankar Kumar',     NULL, 'MH-LAB-21001', 'lab_technician', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  ('c0000001-0000-0000-0000-000000000022','LAB-002','Meena Tiwari',           NULL, 'MH-LAB-21002', 'lab_technician', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
   -- Admin
-  ('c0000001-0000-0000-0000-000000000031','ADM-001','Prakash Iyer',           NULL, 'MH-ADM-31001', 'admin');
+  ('c0000001-0000-0000-0000-000000000031','ADM-001','Prakash Iyer',           NULL, 'MH-ADM-31001', 'admin', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  -- Registration Desk
+  ('c0000001-0000-0000-0000-000000000041','REG-001','Sunita Devi',            NULL, 'MH-REG-41001', 'registration_desk', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE),
+  -- Admission Desk
+  ('c0000001-0000-0000-0000-000000000042','ADT-001','Rajesh Sharma',          NULL, 'MH-ADT-42001', 'admission_desk', '$2a$12$79v3TCMNE19qClh.8SiNGOVlNU/jDGHO477wyNPMukcZbaMskaX7C', FALSE);
 
 -- ── 4. PATIENTS ───────────────────────────────────────────
 INSERT INTO patients (patient_id, mrn, first_name, last_name, dob, gender, blood_group, national_id, phone, email, address) VALUES
-  ('d0000001-0000-0000-0000-000000000001','MRN-20240101-0001','Ramesh',    'Gupta',       '1958-04-12','male',  'B+',  'XXXX1234A','9812345678','ramesh.gupta@email.com',  '{"line1":"12 Gandhi Nagar","city":"Mumbai","state":"Maharashtra","pincode":"400001"}'),
-  ('d0000001-0000-0000-0000-000000000002','MRN-20240101-0002','Sunita',    'Sharma',      '1975-09-23','female','A+',  'XXXX5678B','9823456789','sunita.sharma@email.com', '{"line1":"45 Nehru Road","city":"Pune","state":"Maharashtra","pincode":"411001"}'),
-  ('d0000001-0000-0000-0000-000000000003','MRN-20240101-0003','Arjun',     'Patil',       '1990-02-15','male',  'O+',  'XXXX9012C','9834567890','arjun.patil@email.com',   '{"line1":"7 MG Road","city":"Nagpur","state":"Maharashtra","pincode":"440001"}'),
-  ('d0000001-0000-0000-0000-000000000004','MRN-20240101-0004','Priya',     'Reddy',       '1988-11-30','female','AB+', 'XXXX3456D','9845678901','priya.reddy@email.com',   '{"line1":"23 Station Road","city":"Nashik","state":"Maharashtra","pincode":"422001"}'),
-  ('d0000001-0000-0000-0000-000000000005','MRN-20240101-0005','Mohan',     'Kulkarni',    '1945-07-08','male',  'A-',  'XXXX7890E','9856789012',NULL,                      '{"line1":"5 Temple Street","city":"Aurangabad","state":"Maharashtra","pincode":"431001"}'),
-  ('d0000001-0000-0000-0000-000000000006','MRN-20240101-0006','Anjali',    'Deshmukh',    '1995-03-17','female','O-',  'XXXX2345F','9867890123','anjali.d@email.com',       '{"line1":"89 Shivaji Chowk","city":"Solapur","state":"Maharashtra","pincode":"413001"}'),
-  ('d0000001-0000-0000-0000-000000000007','MRN-20240101-0007','Suresh',    'Joshi',       '1965-12-25','male',  'B-',  'XXXX6789G','9878901234',NULL,                      '{"line1":"3 Laxmi Lane","city":"Kolhapur","state":"Maharashtra","pincode":"416001"}'),
-  ('d0000001-0000-0000-0000-000000000008','MRN-20240101-0008','Kavitha',   'Nair',        '1982-06-04','female','B+',  'XXXX0123H','9889012345','kavitha.nair@email.com',  '{"line1":"17 Beach Road","city":"Mumbai","state":"Maharashtra","pincode":"400005"}'),
-  ('d0000001-0000-0000-0000-000000000009','MRN-20240101-0009','Deepak',    'Verma',       '2001-01-19','male',  'A+',  'XXXX4567I','9890123456','deepak.verma@email.com',  '{"line1":"66 Civil Lines","city":"Nagpur","state":"Maharashtra","pincode":"440001"}'),
-  ('d0000001-0000-0000-0000-000000000010','MRN-20240101-0010','Lalita',    'Rane',        '1938-08-30','female','O+',  'XXXX8901J','9801234567',NULL,                      '{"line1":"2 Old Town Road","city":"Pune","state":"Maharashtra","pincode":"411002"}');
+  ('d0000001-0000-0000-0000-000000000001','MRN-20240101-0001','Ramesh',    'Gupta',       '1958-04-12','male',  'B+',  '614678986666','9812345678','ramesh.gupta@email.com',  '{"line1":"12 Gandhi Nagar","city":"Mumbai","state":"Maharashtra","pincode":"400001"}'),
+  ('d0000001-0000-0000-0000-000000000002','MRN-20240101-0002','Sunita',    'Sharma',      '1975-09-23','female','A+',  '614678988535','9823456789','sunita.sharma@email.com', '{"line1":"45 Nehru Road","city":"Pune","state":"Maharashtra","pincode":"411001"}'),
+  ('d0000001-0000-0000-0000-000000000003','MRN-20240101-0003','Arjun',     'Patil',       '1990-02-15','male',  'O+',  '614678924526','9834567890','arjun.patil@email.com',   '{"line1":"7 MG Road","city":"Nagpur","state":"Maharashtra","pincode":"440001"}'),
+  ('d0000001-0000-0000-0000-000000000004','MRN-20240101-0004','Priya',     'Reddy',       '1988-11-30','female','AB+', '614678946264','9845678901','priya.reddy@email.com',   '{"line1":"23 Station Road","city":"Nashik","state":"Maharashtra","pincode":"422001"}'),
+  ('d0000001-0000-0000-0000-000000000005','MRN-20240101-0005','Mohan',     'Kulkarni',    '1945-07-08','male',  'A-',  '614678914624','9856789012',NULL,                      '{"line1":"5 Temple Street","city":"Aurangabad","state":"Maharashtra","pincode":"431001"}'),
+  ('d0000001-0000-0000-0000-000000000006','MRN-20240101-0006','Anjali',    'Deshmukh',    '1995-03-17','female','O-',  '614678914542','9867890123','anjali.d@email.com',       '{"line1":"89 Shivaji Chowk","city":"Solapur","state":"Maharashtra","pincode":"413001"}'),
+  ('d0000001-0000-0000-0000-000000000007','MRN-20240101-0007','Suresh',    'Joshi',       '1965-12-25','male',  'B-',  '614678914435','9878901234',NULL,                      '{"line1":"3 Laxmi Lane","city":"Kolhapur","state":"Maharashtra","pincode":"416001"}'),
+  ('d0000001-0000-0000-0000-000000000008','MRN-20240101-0008','Kavitha',   'Nair',        '1982-06-04','female','B+',  '614678982455','9889012345','kavitha.nair@email.com',  '{"line1":"17 Beach Road","city":"Mumbai","state":"Maharashtra","pincode":"400005"}'),
+  ('d0000001-0000-0000-0000-000000000009','MRN-20240101-0009','Deepak',    'Verma',       '2001-01-19','male',  'A+',  '614678982354','9890123456','deepak.verma@email.com',  '{"line1":"66 Civil Lines","city":"Nagpur","state":"Maharashtra","pincode":"440001"}'),
+  ('d0000001-0000-0000-0000-000000000010','MRN-20240101-0010','Lalita',    'Rane',        '1938-08-30','female','O+',  '614678986555','9801234567',NULL,                      '{"line1":"2 Old Town Road","city":"Pune","state":"Maharashtra","pincode":"411002"}');
 
 -- ── 5. PATIENT INSURANCE ──────────────────────────────────
 INSERT INTO patient_insurance (patient_id, provider_name, policy_number, group_number, valid_from, valid_to, is_primary) VALUES

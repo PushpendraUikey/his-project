@@ -9,6 +9,7 @@ import doctorRoutes        from './routes/doctor.js';
 import labRoutes           from './routes/lab.js';
 import authRoutes          from './routes/auth.js';
 import hieRoutes           from './routes/hie.js';
+import adminRoutes         from './routes/admin.js';
 
 dotenv.config();
 const app = express();
@@ -24,9 +25,10 @@ app.use('/api/doctor',       doctorRoutes);
 app.use('/api/lab',          labRoutes);
 app.use('/api/auth',         authRoutes);
 app.use('/api/hie',          hieRoutes);
+app.use('/api/admin',        adminRoutes);
 
 // ── Health check ───────────────────────────────────────────
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '3.0.0' }));
 
 // ── Global error handler ───────────────────────────────────
 app.use((err, _req, res, _next) => {
@@ -35,4 +37,4 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`HIS backend running on :${PORT}`));
+app.listen(PORT, () => console.log(`MediCore HIS v3.0 running on :${PORT}`));

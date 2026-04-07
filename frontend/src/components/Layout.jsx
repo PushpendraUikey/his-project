@@ -1,18 +1,20 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  UserPlus, BedDouble, Stethoscope, FlaskConical, HeartPulse, Activity, Network, LogOut, ChevronDown
+  UserPlus, BedDouble, Stethoscope, FlaskConical, HeartPulse, Activity, Network,
+  LogOut, ChevronDown, ShieldCheck, Key
 } from 'lucide-react';
 import { useAuth, canAccess } from '../context/AuthContext';
 import { ROLE_LABELS, ROLE_COLORS } from '../lib/api';
 import { useState } from 'react';
 
 const ALL_MODULES = [
-  { path: '/registration', label: 'Registration',    icon: UserPlus,     color: 'text-violet-400', module: 'registration' },
-  { path: '/admission',    label: 'Admission / ADT', icon: BedDouble,    color: 'text-cyan-400',   module: 'admission'    },
-  { path: '/nurse',        label: "Nurse's Station",  icon: HeartPulse,  color: 'text-pink-400',   module: 'nurse'        },
-  { path: '/doctor',       label: "Doctor's View",   icon: Stethoscope,  color: 'text-emerald-400',module: 'doctor'       },
-  { path: '/lab',          label: 'Laboratory (LIS)', icon: FlaskConical, color: 'text-amber-400', module: 'lab'          },
-  { path: '/hie',          label: 'HIE / FHIR R4',   icon: Network,      color: 'text-sky-400',   module: 'hie'          },
+  { path: '/registration', label: 'Registration',     icon: UserPlus,     color: 'text-violet-400',  module: 'registration' },
+  { path: '/admission',    label: 'Admission / ADT',  icon: BedDouble,    color: 'text-cyan-400',    module: 'admission'    },
+  { path: '/nurse',        label: "Nurse's Station",   icon: HeartPulse,  color: 'text-pink-400',    module: 'nurse'        },
+  { path: '/doctor',       label: "Doctor's View",    icon: Stethoscope,  color: 'text-emerald-400', module: 'doctor'       },
+  { path: '/lab',          label: 'Laboratory (LIS)', icon: FlaskConical,  color: 'text-amber-400',  module: 'lab'          },
+  { path: '/hie',          label: 'HIE / FHIR R4',    icon: Network,      color: 'text-sky-400',    module: 'hie'          },
+  { path: '/admin',        label: 'Admin Panel',      icon: ShieldCheck,   color: 'text-violet-400', module: 'admin'        },
 ];
 
 export default function Layout() {
@@ -48,7 +50,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {modules.map(({ path, label, icon: Icon, color, module: mod }) => (
+          {modules.map(({ path, label, icon: Icon, color }) => (
             <NavLink
               key={path}
               to={path}
@@ -87,8 +89,15 @@ export default function Layout() {
               <div className="mt-1 space-y-1 px-1">
                 <div className="px-3 py-2 rounded-lg bg-slate-800/50 text-xs text-slate-500">
                   <p className="font-mono">{user.provider_code}</p>
-                  <p className="mt-0.5 text-slate-600">{user.role}</p>
+                  <p className="mt-0.5 text-slate-600">{ROLE_LABELS[user.role] || user.role}</p>
                 </div>
+                <button
+                  onClick={() => { setShowUser(false); navigate('/change-password'); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400
+                             hover:bg-slate-800 transition-all">
+                  <Key className="w-4 h-4" />
+                  Change Password
+                </button>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-400
@@ -103,7 +112,7 @@ export default function Layout() {
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-800">
-          <p className="text-xs text-slate-700">v2.0.0 · FHIR R4 · HL7 v3</p>
+          <p className="text-xs text-slate-700">v3.0.0 · FHIR R4 · HL7 v3 · RBAC</p>
         </div>
       </aside>
 
