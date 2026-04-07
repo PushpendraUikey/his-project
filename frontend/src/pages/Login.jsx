@@ -42,7 +42,7 @@ export default function Login() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providerCode: providerCode.trim(), password }),
+        body: JSON.stringify({ provider_code: providerCode.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
