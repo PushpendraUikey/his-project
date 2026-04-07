@@ -106,6 +106,13 @@ router.post('/orders/:id/process', async (req, res, next) => {
         );
 
         await client.query('COMMIT');
+
+        // FHIR ORU_R01: all tests resulted via machine — generate lab result message
+        try {
+          await sendLabResultMessage(null, lab_order_id, null);
+        } catch (fhirErr) {
+          console.error('[FHIR] Machine simulation ORU_R01 failed:', fhirErr.message);
+        }
       } catch (e) {
         await client.query('ROLLBACK');
         console.error('Machine simulation failed:', e);
@@ -193,11 +200,50 @@ router.get('/technicians', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Available machines
+// Default lab machines seeded on first boot
+const DEFAULT_MACHINES = [
+  { name: 'Beckman Coulter AU5800',            type: 'Autoanalyzer' },
+  { name: 'Sysmex XN-1000',                   type: 'Hematology Analyzer' },
+  { name: 'Abbott ARCHITECT i2000SR',          type: 'Immunoassay Analyzer' },
+  { name: 'Siemens ADVIA 1800',               type: 'Chemistry Analyzer' },
+  { name: 'Roche cobas 6000',                 type: 'Automated Analyzer' },
+  { name: 'BD BACTEC FX',                     type: 'Blood Culture System' },
+  { name: 'Stago STA-R Max',                  type: 'Coagulation Analyzer' },
+  { name: 'Radiometer ABL90 FLEX',            type: 'Blood Gas Analyzer' },
+];
+
+// Available machines — auto-seeds defaults if the table is empty
 router.get('/machines', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query(`SELECT * FROM lab_machines ORDER BY id`);
+    let { rows } = await pool.query(`SELECT * FROM lab_machines ORDER BY id`);
+    if (rows.length === 0) {
+      for (const m of DEFAULT_MACHINES) {
+        await pool.query(`INSERT INTO lab_machines (name, type) VALUES ($1, $2)`, [m.name, m.type]);
+      }
+      ({ rows } = await pool.query(`SELECT * FROM lab_machines ORDER BY id`));
+    }
     res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Add a new lab machine (admin / dynamic management)
+router.post('/machines', async (req, res, next) => {
+  try {
+    const { name, type } = req.body;
+    if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
+    const { rows: [machine] } = await pool.query(
+      `INSERT INTO lab_machines (name, type) VALUES ($1, $2) RETURNING *`,
+      [name, type]
+    );
+    res.status(201).json(machine);
+  } catch (err) { next(err); }
+});
+
+// Delete a lab machine
+router.delete('/machines/:id', async (req, res, next) => {
+  try {
+    await pool.query(`DELETE FROM lab_machines WHERE id=$1`, [req.params.id]);
+    res.json({ message: 'Machine removed' });
   } catch (err) { next(err); }
 });
 

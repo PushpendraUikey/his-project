@@ -448,13 +448,20 @@ export default function Doctor() {
                       <div className="space-y-2">
                         {(l.tests || []).filter(t => t && t.test_name).map((t, j) => (
                           <div key={j} className="flex items-center justify-between text-sm bg-slate-800 rounded px-3 py-2">
-                            <span className="text-slate-300">{t.test_name}</span>
+                            <div>
+                              <span className="text-slate-300">{t.test_name}</span>
+                              {t.loinc_code && (
+                                <span className="ml-2 font-mono text-xs text-cyan-600">{t.loinc_code}</span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2">
-                              {t.result !== null && t.result !== undefined && (
+                              {(t.result !== null && t.result !== undefined) ? (
                                 <span className={`font-mono font-medium ${flagColor[t.flag] || 'text-slate-200'}`}>
                                   {t.result} {t.unit}
                                 </span>
-                              )}
+                              ) : t.text_value ? (
+                                <span className="text-slate-300 text-xs">{t.text_value}</span>
+                              ) : null}
                               {t.flag && <span className={`text-xs font-bold ${flagColor[t.flag] || ''}`}>{t.flag}</span>}
                               <span className={`badge ${t.status === 'resulted' ? 'badge-green' : 'badge-gray'} text-xs`}>{t.status}</span>
                             </div>

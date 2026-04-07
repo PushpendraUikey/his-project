@@ -336,7 +336,12 @@ router.get('/hie-logs/stats', async (req, res) => {
         COUNT(*) FILTER (WHERE status='error') AS errors
       FROM hie_message_log
     `);
-    res.json(result.rows[0]);
+    // Include LIS result count separately (lab_results not in hie_message_log)
+    const lisResult = await pool.query(`SELECT COUNT(*) AS lis_count FROM lab_results`);
+    res.json({
+      ...result.rows[0],
+      LIS_RESULT: lisResult.rows[0].lis_count,
+    });
   } catch (error) {
     console.error('Error fetching HIE statistics:', error);
     res.status(500).json({ error: 'Failed to fetch HIE statistics' });

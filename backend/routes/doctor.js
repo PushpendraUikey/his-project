@@ -64,13 +64,17 @@ router.get('/patient/:admissionId', async (req, res, next) => {
          WHERE doc.admission_id=$1 ORDER BY doc.created_at DESC`, [id]),
       pool.query(
         `SELECT lo.order_number, lo.ordered_at, lo.order_status, lo.priority,
-                json_agg(json_build_object('test_name', lot.test_name, 'loinc_code', lot.loinc_code, 'status', lot.individual_status,
+                json_agg(json_build_object(
+                  'test_name', lot.test_name,
+                  'loinc_code', lot.loinc_code,
+                  'status', lot.individual_status,
                   'result', lr.numeric_value,
                   'text_value', lr.text_value,
                   'unit', lr.unit,
                   'reference_low', lr.reference_range_low,
                   'reference_high', lr.reference_range_high,
-                  'flag', lr.abnormal_flag)) AS tests
+                  'flag', lr.abnormal_flag
+                ) ORDER BY lot.test_name) AS tests
          FROM lab_orders lo
          JOIN lab_order_tests lot ON lot.lab_order_id=lo.lab_order_id
          LEFT JOIN lab_results lr ON lr.order_test_id=lot.order_test_id

@@ -193,9 +193,16 @@ export default function Registration() {
     setSaving(true);
     setError('');
     try {
+      // Normalise to exactly 10 digits — strip non-digits, then drop a
+      // leading "91" country-code if the result is 12 digits (e.g. +919876543210).
+      let phoneDigits = form.phone.replace(/\D/g, '');
+      if (phoneDigits.length === 12 && phoneDigits.startsWith('91')) {
+        phoneDigits = phoneDigits.slice(2);
+      }
+
       const payload = {
         ...form,
-        phone: form.phone.replace(/\D/g, ''),
+        phone: phoneDigits,
       };
 
       if (user?.provider_id) {

@@ -257,7 +257,9 @@ export default function Admission() {
                 <tbody>
                   {admissions.map(a => {
                     const approval = getApprovalBadge(a);
-                    const isDischargeApproved = a.discharge_approved === true;
+                    // Each action is only permitted when the doctor approved specifically for it
+                    const canDischarge = a.discharge_approved === true && a.discharge_decision === 'discharge';
+                    const canTransfer  = a.discharge_approved === true && a.discharge_decision === 'transfer';
 
                     return (
                       <tr key={a.admission_id} className="table-row">
@@ -282,25 +284,45 @@ export default function Admission() {
                         <td className="td text-slate-500 text-xs">{formatDateTime(a.admitted_at)}</td>
                         <td className="td">
                           <div className="flex items-center gap-2">
-                            <button className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1"
-                              onClick={() => { setShowTransfer(a); setTransferType('internal'); }}>
-                              <ArrowRightLeft className="w-3 h-3" /> Transfer
-                            </button>
+                            {/* Transfer — only when doctor approved transfer */}
                             <div className="group relative">
                               <button
                                 className={`text-xs px-2.5 py-1.5 flex items-center gap-1 rounded-md transition-all ${
-                                  isDischargeApproved
+                                  canTransfer
+                                    ? 'btn-secondary'
+                                    : 'bg-slate-700/50 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'
+                                }`}
+                                onClick={() => { if (canTransfer) { setShowTransfer(a); setTransferType('internal'); } }}
+                                disabled={!canTransfer}>
+                                <ArrowRightLeft className="w-3 h-3" /> Transfer
+                                {canTransfer && <CheckCircle className="w-3 h-3 text-amber-400" />}
+                              </button>
+                              {!canTransfer && (
+                                <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                                  {a.discharge_approved && a.discharge_decision !== 'transfer'
+                                    ? 'Doctor approved for ' + a.discharge_decision + ', not transfer'
+                                    : 'Awaiting doctor transfer approval'}
+                                </div>
+                              )}
+                            </div>
+                            {/* Discharge — only when doctor approved discharge */}
+                            <div className="group relative">
+                              <button
+                                className={`text-xs px-2.5 py-1.5 flex items-center gap-1 rounded-md transition-all ${
+                                  canDischarge
                                     ? 'btn-danger'
                                     : 'bg-red-500/20 text-red-400 border border-red-500/30 cursor-not-allowed opacity-50'
                                 }`}
-                                onClick={() => { if (isDischargeApproved) { setDischargeError(''); setShowDischarge(a); } }}
-                                disabled={!isDischargeApproved}>
+                                onClick={() => { if (canDischarge) { setDischargeError(''); setShowDischarge(a); } }}
+                                disabled={!canDischarge}>
                                 <LogOut className="w-3 h-3" /> Discharge
-                                {isDischargeApproved && <CheckCircle className="w-3 h-3 text-emerald-400" />}
+                                {canDischarge && <CheckCircle className="w-3 h-3 text-emerald-400" />}
                               </button>
-                              {!isDischargeApproved && (
+                              {!canDischarge && (
                                 <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
-                                  Awaiting doctor approval
+                                  {a.discharge_approved && a.discharge_decision !== 'discharge'
+                                    ? 'Doctor approved for ' + a.discharge_decision + ', not discharge'
+                                    : 'Awaiting doctor discharge approval'}
                                 </div>
                               )}
                             </div>
@@ -379,7 +401,7 @@ export default function Admission() {
             <div>
               <label className="label">Admission Source</label>
               <select className="select" value={form.admission_source} onChange={e => set('admission_source', e.target.value)}>
-                {['opd','emergency','referral','transfer_in','direct'].map(s => (
+                {['opd','emergency','referral','transfer','direct'].map(s => (
                   <option key={s} value={s}>{s.replace('_',' ')}</option>
                 ))}
               </select>

@@ -505,7 +505,7 @@ function UserManagementTab() {
     if (!selectedProvider) return
     setActionLoading(true)
     try {
-      await api.deactivateProvider(selectedProvider.id)
+      await api.deactivateProvider(selectedProvider.provider_id)
       fetchProviders()
       setDeactivateModalOpen(false)
     } catch (err) {

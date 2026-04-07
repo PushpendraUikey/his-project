@@ -154,16 +154,18 @@ router.post('/discharge', async (req, res, next) => {
     const { admission_id, discharging_provider_id, discharge_disposition,
             discharge_condition, discharge_summary, follow_up_required, follow_up_date, performed_by } = req.body;
 
-    // FEATURE B: Doctor approval check
+    // Doctor must have explicitly approved for discharge (not transfer / continue)
     const { rows: [admission] } = await client.query(
-      `SELECT bed_id, discharge_approved FROM admissions WHERE admission_id=$1`,
+      `SELECT bed_id, discharge_approved, discharge_decision FROM admissions WHERE admission_id=$1`,
       [admission_id]
     );
 
-    if (!admission?.discharge_approved) {
+    if (!admission?.discharge_approved || admission.discharge_decision !== 'discharge') {
       await client.query('ROLLBACK');
       return res.status(403).json({
-        error: 'Discharge requires doctor approval. Please request approval from the attending physician.'
+        error: admission?.discharge_approved
+          ? `Doctor approved for '${admission.discharge_decision}', not discharge. Please get the correct approval.`
+          : 'Discharge requires doctor approval. Please request approval from the attending physician.'
       });
     }
 
@@ -184,7 +186,7 @@ router.post('/discharge', async (req, res, next) => {
 
     if (admission?.bed_id) {
       await client.query(
-        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='available', status_updated_at=NOW() WHERE bed_id=$1`,
         [admission.bed_id]
       );
     }
@@ -222,17 +224,27 @@ router.post('/transfer', async (req, res, next) => {
       return res.status(400).json({ error: 'admission_id and to_bed_id required' });
     }
 
-    // Get current bed
+    // Doctor must have explicitly approved for transfer
     const { rows: [admission] } = await client.query(
-      'SELECT bed_id, patient_id FROM admissions WHERE admission_id=$1', [admission_id]
+      'SELECT bed_id, patient_id, discharge_approved, discharge_decision FROM admissions WHERE admission_id=$1',
+      [admission_id]
     );
+
+    if (!admission?.discharge_approved || admission.discharge_decision !== 'transfer') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: admission?.discharge_approved
+          ? `Doctor approved for '${admission.discharge_decision}', not transfer. Please get the correct approval.`
+          : 'Transfer requires doctor approval. Please request approval from the attending physician.'
+      });
+    }
 
     const from_bed_id = admission?.bed_id;
 
     // Release old bed
     if (from_bed_id) {
       await client.query(
-        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='available', status_updated_at=NOW() WHERE bed_id=$1`,
         [from_bed_id]
       );
     }
@@ -289,14 +301,25 @@ router.post('/external-transfer', async (req, res, next) => {
       return res.status(400).json({ error: 'admission_id and to_facility_name required' });
     }
 
+    // Doctor must have explicitly approved for transfer
     const { rows: [admission] } = await client.query(
-      'SELECT bed_id FROM admissions WHERE admission_id=$1', [admission_id]
+      'SELECT bed_id, discharge_approved, discharge_decision FROM admissions WHERE admission_id=$1',
+      [admission_id]
     );
+
+    if (!admission?.discharge_approved || admission.discharge_decision !== 'transfer') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: admission?.discharge_approved
+          ? `Doctor approved for '${admission.discharge_decision}', not transfer. Please get the correct approval.`
+          : 'Transfer requires doctor approval. Please request approval from the attending physician.'
+      });
+    }
 
     // Release bed
     if (admission?.bed_id) {
       await client.query(
-        `UPDATE beds SET status='dirty', status_updated_at=NOW() WHERE bed_id=$1`,
+        `UPDATE beds SET status='available', status_updated_at=NOW() WHERE bed_id=$1`,
         [admission.bed_id]
       );
     }

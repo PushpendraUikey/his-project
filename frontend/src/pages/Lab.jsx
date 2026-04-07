@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FlaskConical, CheckCircle, Clock, AlertTriangle, Beaker, Plus, Network } from 'lucide-react';
+import { FlaskConical, CheckCircle, Clock, AlertTriangle, Beaker, Plus, Network, Cpu, Trash2 } from 'lucide-react';
 import { api, formatDateTime, age } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, PriorityBadge, StatCard } from '../components/ui';
@@ -88,16 +88,43 @@ export default function Lab() {
 
   const [showProcess, setShowProcess] = useState(null);
   const [procMachine, setProcMachine] = useState('');
+  // Machine management
+  const [showAddMachine, setShowAddMachine] = useState(false);
+  const [newMachineName, setNewMachineName] = useState('');
+  const [newMachineType, setNewMachineType] = useState('');
+  const [machineTypes] = useState([
+    'Autoanalyzer', 'Hematology Analyzer', 'Immunoassay Analyzer',
+    'Chemistry Analyzer', 'Automated Analyzer', 'Blood Culture System',
+    'Coagulation Analyzer', 'Blood Gas Analyzer', 'Urinalysis Analyzer', 'Other',
+  ]);
 
   async function handleProcess(e) {
     e.preventDefault(); setSaving(true); setError('');
     try {
       await api.processOnMachine(showProcess.lab_order_id, { machine_id: procMachine });
       setShowProcess(null); load();
-      showFhir('⚙️ Order sent to machine. Simulation started (3s)...');
+      showFhir('⚙️ Order sent to machine. FHIR ORU R01 will be auto-sent when simulation completes (3s)...');
       setTimeout(load, 3500); // refresh after simulation
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
+  }
+
+  async function handleAddMachine(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {
+      await api.addLabMachine({ name: newMachineName, type: newMachineType });
+      setNewMachineName(''); setNewMachineType('');
+      setShowAddMachine(false);
+      load();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDeleteMachine(machineId) {
+    try {
+      await api.deleteLabMachine(machineId);
+      load();
+    } catch (e) { setError(e.message); }
   }
 
   function setRF(k, v) { setResultForm(f => ({ ...f, [k]: v })); }
@@ -183,9 +210,44 @@ export default function Lab() {
               <StatCard label="Processing" value={processingCount} color="text-cyan-400" />
               <StatCard label="Urgent / STAT" value={criticalCount} color="text-red-400" />
             </div>
-            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+
+            {/* Lab Machines Panel */}
+            <div className="card mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-cyan-400" />
+                  <p className="section-title mb-0">Lab Equipment</p>
+                </div>
+                <button className="btn-primary text-xs flex items-center gap-1 px-3 py-1.5"
+                  onClick={() => setShowAddMachine(true)}>
+                  <Plus className="w-3 h-3" /> Add Machine
+                </button>
+              </div>
+              {machines.length === 0 ? (
+                <p className="text-xs text-slate-500">No machines configured. Click "Add Machine" to register equipment.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {machines.map(m => (
+                    <div key={m.id} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 flex items-start justify-between group">
+                      <div>
+                        <p className="text-sm font-medium text-slate-200 leading-tight">{m.name}</p>
+                        <span className="inline-block mt-1 text-xs font-medium px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400">{m.type}</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMachine(m.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-red-400 ml-2 mt-0.5"
+                        title="Remove machine">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col items-center justify-center py-8 text-slate-600">
               <Beaker className="w-12 h-12 mb-4 opacity-30" />
-              <p className="text-sm">Select an order from the list to begin</p>
+              <p className="text-sm">Select an order from the list to begin processing</p>
             </div>
           </>
         ) : (
@@ -323,6 +385,32 @@ export default function Lab() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Add Machine modal */}
+      <Modal open={showAddMachine} onClose={() => setShowAddMachine(false)} title="Add Lab Machine">
+        <form onSubmit={handleAddMachine} className="space-y-4">
+          <ErrorBanner message={error} />
+          <div>
+            <label className="label">Machine Name *</label>
+            <input className="input" placeholder="e.g. Beckman Coulter AU5800"
+              value={newMachineName} onChange={e => setNewMachineName(e.target.value)} required />
+          </div>
+          <div>
+            <label className="label">Machine Type *</label>
+            <select className="select" value={newMachineType} onChange={e => setNewMachineType(e.target.value)} required>
+              <option value="">-- Select Type --</option>
+              {machineTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-3">
+            <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving}>
+              {saving ? <Spinner className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              Add Machine
+            </button>
+            <button type="button" className="btn-secondary" onClick={() => setShowAddMachine(false)}>Cancel</button>
+          </div>
+        </form>
       </Modal>
 
       {/* Enter result modal */}

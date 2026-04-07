@@ -105,12 +105,8 @@ export const api = {
   enterResult:     (data) => req('/lab/results', { method: 'POST', body: data }),
   getTechnicians:  () => req('/lab/technicians'),
   getLabMachines:  () => req('/lab/machines'),
-
-  // ── Verifier ─────────────────────────────────────────────
-  getVerifiers:       () => req('/verifier/verifiers'),
-  getVerifierOrders:  () => req('/verifier/orders'),
-  approveVerifierOrder:(id, data) => req(`/verifier/orders/${id}/approve`, { method: 'POST', body: data }),
-  rejectVerifierOrder: (id, data) => req(`/verifier/orders/${id}/reject`, { method: 'POST', body: data }),
+  addLabMachine:   (data) => req('/lab/machines', { method: 'POST', body: data }),
+  deleteLabMachine:(id) => req(`/lab/machines/${id}`, { method: 'DELETE' }),
 
   // ── Admin ────────────────────────────────────────────────
   getProviders:       (params = {}) => {
