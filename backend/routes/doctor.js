@@ -193,9 +193,9 @@ router.post('/approve-discharge', async (req, res, next) => {
 
     // Log to adt_audit_log
     await client.query(
-      `INSERT INTO adt_audit_log (admission_id, event_type, event_details, user_id, timestamp)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [admission_id, event_type, { decision, notes }, doctor_id]
+      `INSERT INTO adt_audit_log (admission_id, event_type, event_description, performed_by)
+       VALUES ($1, $2, $3, $4)`,
+      [admission_id, event_type, notes || decision, doctor_id]
     );
 
     await client.query('COMMIT');

@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { HeartPulse, Thermometer, Wind, Activity, Plus, FileText, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import { api, formatDateTime, age, getVitalStatus, VITAL_STATUS_COLORS, VITAL_RANGES } from '../lib/api';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState, StatCard } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 export default function Nurse() {
+  const { user } = useAuth();
+  // nurseId is always the logged-in user — never changeable
+  const nurseId = user?.provider_id || '';
+  const nurseName = user?.full_name || 'Unknown';
+
   const [admissions, setAdmissions] = useState([]);
-  const [nurses, setNurses]         = useState([]);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
   const [selected, setSelected]     = useState(null);
@@ -15,7 +20,6 @@ export default function Nurse() {
   const [showVitals, setShowVitals] = useState(false);
   const [showNote, setShowNote]     = useState(false);
   const [saving, setSaving]         = useState(false);
-  const [nurseId, setNurseId]       = useState('');
   const [vitalsForm, setVitalsForm] = useState({
     systolic_bp:'', diastolic_bp:'', heart_rate:'', temperature:'', spo2:'', respiratory_rate:'', weight_kg:'', height_cm:''
   });
@@ -24,12 +28,11 @@ export default function Nurse() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [adm, nrs] = await Promise.all([api.getNurseAdmissions(), api.getNurses()]);
-      setAdmissions(adm); setNurses(nrs);
-      if (nrs.length && !nurseId) setNurseId(nrs[0].provider_id);
+      const adm = await api.getNurseAdmissions();
+      setAdmissions(adm);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [nurseId]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -136,9 +139,7 @@ export default function Nurse() {
           </div>
           <div className="mt-3">
             <label className="label">Logged in as</label>
-            <select className="select text-xs" value={nurseId} onChange={e => setNurseId(e.target.value)}>
-              {nurses.map(n => <option key={n.provider_id} value={n.provider_id}>{n.full_name}</option>)}
-            </select>
+            <p className="text-xs text-slate-300 bg-slate-800 rounded px-3 py-2">{nurseName}</p>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
