@@ -215,6 +215,30 @@ router.post('/approve-discharge', async (req, res, next) => {
   } finally { client.release(); }
 });
 
+// Set ICD-11 coded diagnosis on an admission
+router.patch('/patient/:admissionId/diagnosis', async (req, res, next) => {
+  try {
+    const { admissionId } = req.params;
+    const { diagnosis_code, diagnosis_description } = req.body;
+
+    if (!diagnosis_code || !diagnosis_description) {
+      return res.status(400).json({ error: 'diagnosis_code and diagnosis_description are required' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE admissions
+       SET diagnosis_code        = $1,
+           diagnosis_description = $2
+       WHERE admission_id = $3
+       RETURNING admission_id, diagnosis_code, diagnosis_description`,
+      [diagnosis_code.trim(), diagnosis_description.trim(), admissionId]
+    );
+
+    if (!rows.length) return res.status(404).json({ error: 'Admission not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 // Pending discharge approvals
 router.get('/pending-approvals', async (req, res, next) => {
   try {
