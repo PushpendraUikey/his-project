@@ -102,6 +102,7 @@ export const api = {
 
   // ── Lab (LIS) ────────────────────────────────────────────
   getLabOrders:    (status) => req(`/lab/orders${status ? `?status=${status}` : ''}`),
+  getLabStats:     () => req('/lab/stats'),
   collectSpecimen: (id, data) => req(`/lab/orders/${id}/collect`, { method: 'PATCH', body: data }),
   processOnMachine:(id, data) => req(`/lab/orders/${id}/process`, { method: 'POST', body: data }),
   enterResult:     (data) => req('/lab/results', { method: 'POST', body: data }),

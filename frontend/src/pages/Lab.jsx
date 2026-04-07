@@ -9,6 +9,7 @@ export default function Lab() {
   const [orders, setOrders]         = useState([]);
   const [technicians, setTechs]     = useState([]);
   const [machines, setMachines]     = useState([]);
+  const [stats, setStats]           = useState({ pending:0, collected:0, processing:0, urgent:0 });
   const [techId, setTechId]         = useState('');
   const [statusFilter, setFilter]   = useState('pending');
   const [loading, setLoading]       = useState(false);
@@ -28,8 +29,8 @@ export default function Lab() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [ord, techs, macs] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines()]);
-      setOrders(ord); setTechs(techs); setMachines(macs);
+      const [ord, techs, macs, st] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines(), api.getLabStats()]);
+      setOrders(ord); setTechs(techs); setMachines(macs); setStats(st);
       if (!techId) {
         const myTech = user?.role === 'lab_technician'
           ? techs.find(t => t.provider_id === user.provider_id)
@@ -134,10 +135,10 @@ export default function Lab() {
 
   function setRF(k, v) { setResultForm(f => ({ ...f, [k]: v })); }
 
-  const pendingCount   = orders.filter(o => o.order_status === 'pending').length;
-  const collectCount   = orders.filter(o => o.order_status === 'collected').length;
-  const processingCount= orders.filter(o => o.order_status === 'processing').length;
-  const criticalCount  = orders.filter(o => o.priority === 'critical' || o.priority === 'stat').length;
+  const pendingCount    = parseInt(stats.pending    || 0);
+  const collectCount    = parseInt(stats.collected  || 0);
+  const processingCount = parseInt(stats.processing || 0);
+  const criticalCount   = parseInt(stats.urgent     || 0);
 
   const statusTabs = [
     { key: 'pending',    label: 'Pending' },

@@ -95,8 +95,8 @@ router.post('/orders/:id/process', async (req, res, next) => {
           );
 
           await client.query(
-            `UPDATE lab_order_tests SET individual_status='resulted', machine_id=$1, updated_at=NOW() WHERE order_test_id=$2`,
-            [machine_id || null, test.order_test_id]
+            `UPDATE lab_order_tests SET individual_status='resulted', updated_at=NOW() WHERE order_test_id=$1`,
+            [test.order_test_id]
           );
         }
 
@@ -187,6 +187,22 @@ router.post('/results', async (req, res, next) => {
     await client.query('ROLLBACK');
     next(err);
   } finally { client.release(); }
+});
+
+// Stats across ALL statuses (for dashboard cards — independent of tab filter)
+router.get('/stats', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE order_status='pending')    AS pending,
+         COUNT(*) FILTER (WHERE order_status='collected')  AS collected,
+         COUNT(*) FILTER (WHERE order_status='processing') AS processing,
+         COUNT(*) FILTER (WHERE order_status='resulted')   AS resulted,
+         COUNT(*) FILTER (WHERE priority IN ('critical','stat')) AS urgent
+       FROM lab_orders`
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
 });
 
 // All lab technicians
