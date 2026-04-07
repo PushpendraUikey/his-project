@@ -156,7 +156,7 @@ router.post('/register', authenticateToken, requireRole(['admin']), async (req, 
     await pool.query(
       `INSERT INTO provider_audit_log (provider_id, action, details, performed_by)
        VALUES ($1, $2, $3, $4)`,
-      [result.rows[0].provider_id, 'USER_CREATED', `User ${providerCode} created with role ${role}`, req.user.provider_id]
+      [result.rows[0].provider_id, 'CREATE', `User ${providerCode} created with role ${role}`, req.user.provider_id]
     );
 
     res.status(201).json({
@@ -225,7 +225,7 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     await pool.query(
       `INSERT INTO provider_audit_log (provider_id, action, details, performed_by)
        VALUES ($1, $2, $3, $4)`,
-      [req.user.provider_id, 'PASSWORD_CHANGED', 'User changed their password', req.user.provider_id]
+      [req.user.provider_id, 'CHANGE_PASSWORD', 'User changed their password', req.user.provider_id]
     );
 
     res.json({ message: 'Password changed successfully' });

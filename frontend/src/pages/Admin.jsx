@@ -862,8 +862,7 @@ function AuditTrailTab() {
   const [actionFilter, setActionFilter] = useState('')
 
   const actionTypes = [
-    'USER_CREATED',
-    'PASSWORD_CHANGED',
+    'CREATE',
     'ACTIVATE',
     'DEACTIVATE',
     'RESET_PASSWORD',
@@ -892,7 +891,7 @@ function AuditTrailTab() {
   }, [fetchAuditLogs])
 
   const getActionColor = (action) => {
-    if (action === 'USER_CREATED' || action === 'ACTIVATE') {
+    if (action === 'CREATE' || action === 'ACTIVATE') {
       return 'bg-green-500/20 text-green-400'
     }
     if (action === 'DEACTIVATE') {
