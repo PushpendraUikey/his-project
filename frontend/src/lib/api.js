@@ -38,6 +38,15 @@ async function req(path, options = {}) {
   return res.json();
 }
 
+// Strip undefined/null values before creating URL params
+function cleanParams(params) {
+  const cleaned = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') cleaned[k] = v;
+  }
+  return new URLSearchParams(cleaned).toString();
+}
+
 export const api = {
   // ── Auth ──────────────────────────────────────────────────
   login:          (data) => req('/auth/login', { method: 'POST', body: data }),
@@ -89,7 +98,7 @@ export const api = {
 
   // ── Admin ────────────────────────────────────────────────
   getProviders:       (params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const q = cleanParams(params);
     return req(`/admin/providers${q ? `?${q}` : ''}`);
   },
   getProvider:        (id) => req(`/admin/providers/${id}`),
@@ -97,18 +106,18 @@ export const api = {
   deactivateProvider: (id) => req(`/admin/providers/${id}/deactivate`, { method: 'POST' }),
   resetPassword:      (id, data) => req(`/admin/providers/${id}/reset-password`, { method: 'POST', body: data }),
   getAdminHIELogs:    (params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const q = cleanParams(params);
     return req(`/admin/hie-logs${q ? `?${q}` : ''}`);
   },
   getAdminHIEStats:   () => req('/admin/hie-logs/stats'),
   getProviderAuditLog:(params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const q = cleanParams(params);
     return req(`/admin/audit-log${q ? `?${q}` : ''}`);
   },
 
   // ── HIE / FHIR R4 ────────────────────────────────────────
   getHIEMessages:      (params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const q = cleanParams(params);
     return req(`/hie/messages${q ? `?${q}` : ''}`);
   },
   getHIEMessage:       (id) => req(`/hie/messages/${id}`),
