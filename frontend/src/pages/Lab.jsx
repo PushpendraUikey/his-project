@@ -112,7 +112,6 @@ export default function Lab() {
     { key: 'collected',  label: 'Collected' },
     { key: 'processing', label: 'Processing' },
     { key: 'resulted',   label: 'Resulted' },
-    { key: 'verified',   label: 'Verified' },
   ];
 
   return (

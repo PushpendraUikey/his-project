@@ -53,7 +53,6 @@ export const ROLE_ACCESS = {
   doctor:            ['doctor'],
   nurse:             ['nurse'],
   lab_technician:    ['lab'],
-  verifier:          ['verifier'],
   registration_desk: ['registration'],
   admission_desk:    ['admission'],
   // Legacy support

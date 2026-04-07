@@ -254,13 +254,33 @@ router.get('/hie-logs', async (req, res) => {
   try {
     const { type, direction, limit = 50, offset = 0 } = req.query;
 
+    // Include both HIE messages AND LIS (lab result) entries so admin sees
+    // lab activity even if no ORU_R01 FHIR message was generated.
     let query = `
-      SELECT
-        hl.log_id, hl.message_id, hl.message_type, hl.event_type,
-        hl.direction, hl.status, hl.destination, hl.source_system, hl.sent_at,
-        p.patient_id, p.mrn, p.first_name || ' ' || p.last_name AS patient_name
-      FROM hie_message_log hl
-      LEFT JOIN patients p ON hl.patient_id = p.patient_id
+      SELECT * FROM (
+        SELECT
+          hl.log_id::text AS log_id, hl.message_id, hl.message_type, hl.event_type,
+          hl.direction, hl.status, hl.destination, hl.source_system, hl.sent_at,
+          p.patient_id, p.mrn, p.first_name || ' ' || p.last_name AS patient_name
+        FROM hie_message_log hl
+        LEFT JOIN patients p ON hl.patient_id = p.patient_id
+        UNION ALL
+        SELECT
+          lr.result_id::text AS log_id,
+          'LIS-' || lr.result_id::text AS message_id,
+          'LIS_RESULT' AS message_type,
+          'LAB_RESULT_ENTERED' AS event_type,
+          'outbound' AS direction,
+          'success' AS status,
+          'LIS' AS destination,
+          'LIS' AS source_system,
+          lr.created_at AS sent_at,
+          pt.patient_id, pt.mrn, pt.first_name || ' ' || pt.last_name AS patient_name
+        FROM lab_results lr
+        JOIN lab_order_tests lot ON lot.order_test_id = lr.order_test_id
+        JOIN lab_orders lo ON lo.lab_order_id = lot.lab_order_id
+        JOIN patients pt ON pt.patient_id = lo.patient_id
+      ) hl
       WHERE 1=1
     `;
     const params = [];

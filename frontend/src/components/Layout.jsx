@@ -13,7 +13,6 @@ const ALL_MODULES = [
   { path: '/nurse',        label: "Nurse's Station",   icon: HeartPulse,  color: 'text-pink-400',    module: 'nurse'        },
   { path: '/doctor',       label: "Doctor's View",    icon: Stethoscope,  color: 'text-emerald-400', module: 'doctor'       },
   { path: '/lab',          label: 'Laboratory (LIS)', icon: FlaskConical,  color: 'text-amber-400',  module: 'lab'          },
-  { path: '/verifier',     label: 'Result Verifier',  icon: ShieldCheck,  color: 'text-rose-400',    module: 'verifier'     },
   { path: '/hie',          label: 'HIE / FHIR R4',    icon: Network,      color: 'text-sky-400',    module: 'hie'          },
   { path: '/admin',        label: 'Admin Panel',      icon: ShieldCheck,   color: 'text-violet-400', module: 'admin'        },
 ];

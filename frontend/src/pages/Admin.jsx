@@ -448,6 +448,7 @@ function UserManagementTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -463,7 +464,7 @@ function UserManagementTab() {
       const data = await api.getProviders({
         role: roleFilter || undefined,
         is_active: statusFilter ? statusFilter === 'active' : undefined,
-        q: searchQuery || undefined,
+        q: debouncedSearch || undefined,
       })
       setProviders(data.providers || [])
     } catch (err) {
@@ -471,7 +472,13 @@ function UserManagementTab() {
     } finally {
       setLoading(false)
     }
-  }, [searchQuery, roleFilter, statusFilter])
+  }, [debouncedSearch, roleFilter, statusFilter])
+
+  // Debounce search input (400ms) to avoid API call on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 400)
+    return () => clearTimeout(t)
+  }, [searchQuery])
 
   useEffect(() => {
     fetchProviders()
@@ -697,7 +704,7 @@ function HIELogsTab() {
   const [typeFilter, setTypeFilter] = useState('')
   const [directionFilter, setDirectionFilter] = useState('')
 
-  const messageTypes = ['ADT_A01', 'ADT_A02', 'ADT_A03', 'ORU_R01']
+  const messageTypes = ['ADT_A01', 'ADT_A02', 'ADT_A03', 'ORU_R01', 'LIS_RESULT']
 
   const fetchData = useCallback(async () => {
     setLoading(true)

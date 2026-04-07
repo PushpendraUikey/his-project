@@ -11,7 +11,6 @@ import authRoutes          from './routes/auth.js';
 import hieRoutes           from './routes/hie.js';
 import adminRoutes         from './routes/admin.js';
 import loincRoutes         from './routes/loinc.js';
-import verifierRoutes      from './routes/verifier.js';
 import { authenticateToken, requireRole } from './routes/auth.js';
 
 dotenv.config();
@@ -29,7 +28,6 @@ app.use('/api/lab',          labRoutes);
 app.use('/api/auth',         authRoutes);
 app.use('/api/hie',          hieRoutes);
 app.use('/api/loinc',        loincRoutes);
-app.use('/api/verifier',     verifierRoutes);
 app.use('/api/admin',        authenticateToken, requireRole(['admin']), adminRoutes);
 
 // ── Health check ───────────────────────────────────────────

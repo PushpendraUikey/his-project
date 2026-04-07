@@ -4,21 +4,22 @@ import { api, formatDate, formatDateTime, age } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Spinner, ErrorBanner, Modal, EmptyState } from '../components/ui';
 
-const EMPTY_FORM = {
+// Factories prevent shared-reference state bugs on reset / re-open
+const makeEmptyForm = () => ({
   first_name: '', last_name: '', dob: '', gender: 'male', blood_group: '',
   national_id: '', phone: '', email: '',
   address: { line1: '', city: '', state: '', pincode: '' },
   insurance: { provider_name: '', policy_number: '', group_number: '', valid_from: '', valid_to: '' },
-};
+});
 
-const EMPTY_ERRORS = {
+const makeEmptyErrors = () => ({
   first_name: '', last_name: '', dob: '', gender: '', blood_group: '',
   national_id: '', phone: '', email: '',
   address: { line1: '', city: '', state: '', pincode: '' },
-};
+});
 
 function validateForm(form) {
-  const errors = JSON.parse(JSON.stringify(EMPTY_ERRORS));
+  const errors = makeEmptyErrors();
 
   // First Name
   if (!form.first_name?.trim()) {
@@ -110,8 +111,8 @@ export default function Registration() {
   const [error, setError]          = useState('');
   const [showForm, setShowForm]    = useState(false);
   const [editPatient, setEdit]     = useState(null);
-  const [form, setForm]            = useState(EMPTY_FORM);
-  const [errors, setErrors]        = useState(EMPTY_ERRORS);
+  const [form, setForm]            = useState(makeEmptyForm);
+  const [errors, setErrors]        = useState(makeEmptyErrors);
   const [saving, setSaving]        = useState(false);
   const [selected, setSelected]    = useState(null);
   const [versions, setVersions]    = useState([]);
@@ -125,16 +126,16 @@ export default function Registration() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-
+  // Single debounced search effect — avoids double initial load that was
+  // causing the form to appear to "reset" on open due to concurrent renders.
   useEffect(() => {
     const t = setTimeout(() => load(query), 300);
     return () => clearTimeout(t);
   }, [query, load]);
 
   function openNew() {
-    setForm(EMPTY_FORM);
-    setErrors(EMPTY_ERRORS);
+    setForm(makeEmptyForm());
+    setErrors(makeEmptyErrors());
     setEdit(null);
     setShowForm(true);
   }
@@ -148,7 +149,7 @@ export default function Registration() {
       address: p.address || { line1: '', city: '', state: '', pincode: '' },
       insurance: { provider_name: '', policy_number: '', group_number: '', valid_from: '', valid_to: '' },
     });
-    setErrors(EMPTY_ERRORS);
+    setErrors(makeEmptyErrors());
     setEdit(p);
     setShowForm(true);
   }
