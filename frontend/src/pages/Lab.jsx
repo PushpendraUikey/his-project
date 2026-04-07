@@ -9,6 +9,7 @@ export default function Lab() {
   const [orders, setOrders]         = useState([]);
   const [technicians, setTechs]     = useState([]);
   const [machines, setMachines]     = useState([]);
+  const [stats, setStats]           = useState({ pending:0, collected:0, processing:0, urgent:0 });
   const [techId, setTechId]         = useState('');
   const [statusFilter, setFilter]   = useState('pending');
   const [loading, setLoading]       = useState(false);
@@ -28,9 +29,14 @@ export default function Lab() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [ord, techs, macs] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines()]);
-      setOrders(ord); setTechs(techs); setMachines(macs);
-      if (techs.length && !techId) setTechId(techs[0].provider_id);
+      const [ord, techs, macs, st] = await Promise.all([api.getLabOrders(statusFilter), api.getTechnicians(), api.getLabMachines(), api.getLabStats()]);
+      setOrders(ord); setTechs(techs); setMachines(macs); setStats(st);
+      if (!techId) {
+        const myTech = user?.role === 'lab_technician'
+          ? techs.find(t => t.provider_id === user.provider_id)
+          : null;
+        setTechId(myTech?.provider_id || techs[0]?.provider_id || '');
+      }
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [statusFilter, techId]);
@@ -102,9 +108,10 @@ export default function Lab() {
     e.preventDefault(); setSaving(true); setError('');
     try {
       await api.processOnMachine(showProcess.lab_order_id, { machine_id: procMachine });
-      setShowProcess(null); load();
-      showFhir('⚙️ Order sent to machine. FHIR ORU R01 will be auto-sent when simulation completes (3s)...');
-      setTimeout(load, 3500); // refresh after simulation
+      const machineName = machines.find(m => String(m.id) === String(procMachine))?.name || 'machine';
+      setShowProcess(null); setSelected(null); load();
+      showFhir(`⚙️ Processing on ${machineName} — results in 3s...`);
+      setTimeout(load, 3600); // refresh after simulation completes
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -129,10 +136,10 @@ export default function Lab() {
 
   function setRF(k, v) { setResultForm(f => ({ ...f, [k]: v })); }
 
-  const pendingCount   = orders.filter(o => o.order_status === 'pending').length;
-  const collectCount   = orders.filter(o => o.order_status === 'collected').length;
-  const processingCount= orders.filter(o => o.order_status === 'processing').length;
-  const criticalCount  = orders.filter(o => o.priority === 'critical' || o.priority === 'stat').length;
+  const pendingCount    = parseInt(stats.pending    || 0);
+  const collectCount    = parseInt(stats.collected  || 0);
+  const processingCount = parseInt(stats.processing || 0);
+  const criticalCount   = parseInt(stats.urgent     || 0);
 
   const statusTabs = [
     { key: 'pending',    label: 'Pending' },
@@ -155,10 +162,18 @@ export default function Lab() {
         <div className="px-4 py-4 border-b border-slate-800">
           <h2 className="font-semibold text-slate-200 mb-1">Laboratory</h2>
           <div className="mt-3">
-            <label className="label">Technician</label>
-            <select className="select text-xs" value={techId} onChange={e => setTechId(e.target.value)}>
-              {technicians.map(t => <option key={t.provider_id} value={t.provider_id}>{t.full_name}</option>)}
-            </select>
+            {user?.role === 'lab_technician' ? (
+              <div className="text-xs text-slate-600">
+                Technician: <span className="text-slate-300 font-medium">{user.full_name || 'You'}</span>
+              </div>
+            ) : (
+              <>
+                <label className="label">Technician</label>
+                <select className="select text-xs" value={techId} onChange={e => setTechId(e.target.value)}>
+                  {technicians.map(t => <option key={t.provider_id} value={t.provider_id}>{t.full_name}</option>)}
+                </select>
+              </>
+            )}
           </div>
         </div>
 
@@ -256,7 +271,7 @@ export default function Lab() {
             {/* Order header */}
             <div className="card mb-5">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-mono text-sm text-amber-400">{selected.order_number}</span>
                     <PriorityBadge priority={selected.priority} />
@@ -266,15 +281,33 @@ export default function Lab() {
                       selected.order_status === 'collected'  ? 'badge-blue'  : 'badge-yellow'
                     }`}>{selected.order_status}</span>
                   </div>
+
+                  {/* Patient info */}
                   <h2 className="text-lg font-semibold text-slate-100">{selected.patient_name}</h2>
-                  <p className="text-sm text-slate-500">
-                    {selected.mrn} · {age(selected.dob)} · Ward {selected.ward_name} · Bed {selected.bed_number}
-                  </p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-500">
+                    <span>MRN: <span className="text-slate-300">{selected.mrn}</span></span>
+                    <span>Age: <span className="text-slate-300">{age(selected.dob)}</span></span>
+                    {selected.gender && <span>Sex: <span className="text-slate-300 capitalize">{selected.gender}</span></span>}
+                    {selected.blood_group && <span>BG: <span className="text-slate-300">{selected.blood_group}</span></span>}
+                    <span>Ward: <span className="text-slate-300">{selected.ward_name} · Bed {selected.bed_number}</span></span>
+                  </div>
+                  {selected.chief_complaint && (
+                    <p className="text-xs text-slate-600 mt-1 italic">"{selected.chief_complaint}"</p>
+                  )}
                   <p className="text-xs text-slate-600 mt-1">
                     Ordered by Dr. {selected.ordering_doctor} · {formatDateTime(selected.ordered_at)}
                   </p>
+
+                  {/* Machine badge — shown once assigned */}
+                  {selected.machine_name && (
+                    <div className="inline-flex items-center gap-1.5 mt-2 bg-cyan-500/10 border border-cyan-500/30 rounded px-2 py-1">
+                      <Cpu className="w-3 h-3 text-cyan-400" />
+                      <span className="text-xs text-cyan-300 font-medium">{selected.machine_name}</span>
+                      <span className="text-xs text-cyan-600">{selected.machine_type}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0 ml-4">
                   {selected.order_status === 'pending' && (
                     <button className="btn-secondary flex items-center gap-1.5 text-sm"
                       onClick={() => setShowCollect(selected)}>
@@ -291,7 +324,7 @@ export default function Lab() {
               </div>
               {selected.collected_at && (
                 <div className="mt-3 pt-3 border-t border-slate-800 text-xs text-slate-500">
-                  Collected: {formatDateTime(selected.collected_at)} by {selected.collected_by || '—'} · Specimen: {selected.specimen_type || '—'}
+                  Collected: {formatDateTime(selected.collected_at)} by {selected.collected_by || '—'} · Specimen: <span className="text-slate-300">{selected.specimen_type || '—'}</span>
                 </div>
               )}
             </div>
@@ -419,7 +452,17 @@ export default function Lab() {
           <form onSubmit={handleResult} className="space-y-4">
             <div className="bg-slate-800 rounded-lg px-4 py-3">
               <p className="text-sm font-medium text-slate-200">{showResult.test.test_name}</p>
-              <p className="text-xs text-slate-500">{showResult.test.category} · {showResult.test.specimen_required}</p>
+              <div className="flex items-center gap-3 mt-1">
+                {showResult.test.test_code && (
+                  <span className="font-mono text-xs text-cyan-400">LOINC: {showResult.test.test_code}</span>
+                )}
+                {showResult.test.category && (
+                  <span className="text-xs text-slate-500 capitalize">{showResult.test.category}</span>
+                )}
+                {showResult.test.specimen_required && (
+                  <span className="text-xs text-slate-600">{showResult.test.specimen_required}</span>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

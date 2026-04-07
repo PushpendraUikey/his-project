@@ -154,6 +154,11 @@ export default function Doctor() {
   const [loincSearch, setLoincSearch] = useState('');
   const [loincResults, setLoincResults] = useState([]);
 
+  // ICD-11 diagnosis coding
+  const [icdSearch, setIcdSearch]     = useState('');
+  const [icdResults, setIcdResults]   = useState([]);
+  const [icdSaving, setIcdSaving]     = useState(false);
+
   useEffect(() => {
     if (!loincSearch.trim()) { setLoincResults([]); return; }
     const t = setTimeout(async () => {
@@ -161,6 +166,30 @@ export default function Doctor() {
     }, 300);
     return () => clearTimeout(t);
   }, [loincSearch]);
+
+  useEffect(() => {
+    if (!icdSearch.trim()) { setIcdResults([]); return; }
+    const t = setTimeout(async () => {
+      try { setIcdResults(await api.searchICD(icdSearch)); } catch {}
+    }, 300);
+    return () => clearTimeout(t);
+  }, [icdSearch]);
+
+  async function selectICDCode(code, description) {
+    setIcdSearch('');
+    setIcdResults([]);
+    setIcdSaving(true);
+    try {
+      await api.updateDiagnosis(selected.admission_id, {
+        diagnosis_code: code,
+        diagnosis_description: description,
+      });
+      // Refresh context to reflect the new coded diagnosis
+      const ctx = await api.getPatientContext(selected.admission_id);
+      setContext(ctx);
+    } catch (e) { setError(e.message); }
+    finally { setIcdSaving(false); }
+  }
 
   function toggleLoinc(code, name) {
     setOrderForm(f => {
@@ -294,12 +323,60 @@ export default function Doctor() {
                   </div>
                   {context.admission.diagnosis_primary && (
                     <div>
-                      <p className="label">Diagnosis</p>
+                      <p className="label">Admission Diagnosis</p>
                       <p className="text-slate-300">{context.admission.diagnosis_primary}</p>
                     </div>
                   )}
                 </div>
               )}
+
+              {/* ICD-11 Coded Diagnosis */}
+              <div className="mt-3 pt-3 border-t border-slate-800">
+                <p className="label mb-2">ICD-11 Coded Diagnosis</p>
+                {context.admission.diagnosis_code ? (
+                  <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 mb-2">
+                    <div>
+                      <span className="font-mono text-xs text-emerald-400 mr-2">{context.admission.diagnosis_code}</span>
+                      <span className="text-sm text-slate-200">{context.admission.diagnosis_description}</span>
+                    </div>
+                    <button
+                      className="text-xs text-slate-500 hover:text-slate-300 ml-3 shrink-0"
+                      onClick={() => setIcdSearch(' ')}
+                    >Change</button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-600 mb-2">No ICD-11 code assigned yet.</p>
+                )}
+
+                {/* Typeahead search */}
+                <div className="relative">
+                  <input
+                    className="input text-sm"
+                    placeholder="Search ICD-11 (e.g. diabetes, fracture, pneumonia)..."
+                    value={icdSearch}
+                    onChange={e => setIcdSearch(e.target.value)}
+                    disabled={icdSaving}
+                  />
+                  {icdSaving && (
+                    <span className="absolute right-3 top-2.5 text-xs text-slate-500">Saving…</span>
+                  )}
+                  {icdResults.length > 0 && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                      {icdResults.map(r => (
+                        <button
+                          key={r.code}
+                          type="button"
+                          onClick={() => selectICDCode(r.code, r.description)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 border-b border-slate-700/50 last:border-0"
+                        >
+                          <span className="font-mono text-cyan-400 mr-2 text-xs">{r.code}</span>
+                          <span className="text-slate-300">{r.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Approval Status Section */}
               <div className="mt-4 pt-4 border-t border-slate-800">

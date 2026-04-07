@@ -99,15 +99,14 @@ export default function Login() {
             <span className="text-cyan-400">Exchange System</span>
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed mb-8">
-            Integrated ADT · LIS · FHIR R4 messaging<br />
-            HL7 v2 ↔ FHIR health data exchange
+            Integrated ADT · LIS · FHIR R4 messaging
           </p>
 
           <div className="space-y-3">
             {[
-              { icon: '🏥', label: 'ADT Module', desc: 'Admissions, Discharges & Transfers' },
-              { icon: '🧪', label: 'LIS Module', desc: 'Lab orders, specimens & results' },
-              { icon: '🔄', label: 'HIE / FHIR R4', desc: 'Real-time HL7 health data exchange' },
+              { icon: '🏥', label: 'ADT Module',        desc: 'Admissions, Discharges & Transfers' },
+              { icon: '🧪', label: 'LIS Module',        desc: 'Lab orders, specimens & results' },
+              { icon: '🔄', label: 'HIE / FHIR R4',    desc: 'Real-time health data exchange' },
               { icon: '🔐', label: 'Role-based Access', desc: 'Doctor · Nurse · Lab Tech · Admin · Registration · Admission' },
             ].map(({ icon, label, desc }) => (
               <div key={label} className="flex items-center gap-3 text-sm">
@@ -122,7 +121,7 @@ export default function Login() {
         </div>
 
         <p className="text-xs text-slate-700">
-          v3.0.0 · FHIR R4 · HL7 v2 · HL7 v3 · SNOMED CT · LOINC
+          v3.0.0 · FHIR R4 · ICD-11 · LOINC
         </p>
       </div>
 
