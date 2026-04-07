@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS admissions (
   admitting_provider_id  UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT,
   attending_provider_id  UUID REFERENCES providers(provider_id) ON DELETE SET NULL,
   admitted_at            TIMESTAMPTZ DEFAULT NOW(),
-  admission_type         VARCHAR(50) NOT NULL CHECK (admission_type IN ('emergency', 'elective', 'maternity')),
+  admission_type         VARCHAR(50) NOT NULL CHECK (admission_type IN ('emergency', 'elective', 'maternity', 'day_care', 'transfer_in')),
   admission_source       VARCHAR(100) CHECK (admission_source IN ('emergency', 'opd', 'referral', 'direct', 'transfer')),
   chief_complaint        TEXT,
   diagnosis_primary      TEXT,

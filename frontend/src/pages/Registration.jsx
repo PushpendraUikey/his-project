@@ -50,11 +50,10 @@ function validateForm(form) {
   if (!form.phone?.trim()) {
     errors.phone = 'Phone is required';
   } else {
-    // Keep optional leading +, strip all other non-digits
-    const phoneDigits = form.phone.replace(/(?!^\+)[^\d]/g, '');
+    // Strip all non-digits for validation (handles spaces, dashes, brackets, +91 prefix, etc.)
+    const phoneDigits = form.phone.replace(/\D/g, '');
     if (!/^\d{10}$/.test(phoneDigits) &&
-        !/^91\d{10}$/.test(phoneDigits) &&
-        !/^\+91\d{10}$/.test(phoneDigits)) {
+        !/^91\d{10}$/.test(phoneDigits)) {
       errors.phone = 'Phone must be exactly 10 digits (or include +91/91 prefix)';
     }
   }
@@ -195,7 +194,7 @@ export default function Registration() {
     try {
       const payload = {
         ...form,
-        phone: form.phone.replace(/(?!^\+)[^\d]/g, ''),
+        phone: form.phone.replace(/\D/g, ''),
       };
 
       if (user?.provider_id) {
