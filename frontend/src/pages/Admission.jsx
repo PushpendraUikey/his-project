@@ -270,7 +270,7 @@ export default function Admission() {
                           {a.bed_number && <div className="text-xs text-slate-500">Bed {a.bed_number}</div>}
                         </td>
                         <td className="td">
-                          <span className="badge badge-blue capitalize">{a.admission_type}</span>
+                          <span className="badge badge-blue capitalize">{(a.admission_type || '').replace(/_/g, ' ')}</span>
                         </td>
                         <td className="td text-slate-400 text-xs">{a.attending_doctor || '—'}</td>
                         <td className="td">

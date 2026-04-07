@@ -175,7 +175,7 @@ export default function Doctor() {
   const flagColor = { H:'text-red-400', HH:'text-red-500', L:'text-blue-400', LL:'text-blue-500', A:'text-amber-400', POS:'text-red-400', NEG:'text-emerald-400', N:'text-emerald-400' };
 
   // Count pending approvals (patients not yet approved)
-  const pendingApprovalsCount = patients.filter(p => !p.discharge_approved).length;
+  const pendingApprovalsCount = (patients || []).filter(p => !p.discharge_approved).length;
 
   return (
     <div className="flex h-screen overflow-hidden relative">
@@ -206,7 +206,7 @@ export default function Doctor() {
                 <label className="label">Viewing as</label>
                 <select className="select text-xs" value={doctorId} onChange={e => setDoctorId(e.target.value)}>
                   <option value="">All Doctors</option>
-                  {doctors.map(d => <option key={d.provider_id} value={d.provider_id}>{d.full_name}</option>)}
+                  {(doctors || []).map(d => <option key={d.provider_id} value={d.provider_id}>{d.full_name}</option>)}
                 </select>
               </>
             )}
@@ -215,10 +215,10 @@ export default function Doctor() {
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex justify-center py-8"><Spinner /></div>
-          ) : patients.length === 0 ? (
+          ) : (patients || []).length === 0 ? (
             <EmptyState icon={Stethoscope} message="No patients" />
           ) : (
-            patients.map(a => (
+            (patients || []).map(a => (
               <button key={a.admission_id} onClick={() => openPatient(a)}
                 className={`w-full text-left px-4 py-3.5 border-b border-slate-800 hover:bg-slate-900 transition-colors ${selected?.admission_id === a.admission_id ? 'bg-slate-900 border-l-2 border-l-emerald-500' : ''}`}>
                 <div className="flex items-start justify-between mb-1">
@@ -255,15 +255,19 @@ export default function Doctor() {
           </div>
         ) : ctxLoading ? (
           <div className="flex justify-center py-16"><Spinner /></div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <ErrorBanner message={error} />
+            <button className="mt-4 btn-secondary" onClick={() => load()}>Retry</button>
+          </div>
         ) : context ? (
           <>
-            <ErrorBanner message={error} />
             {/* Header */}
             <div className="card mb-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-300 font-semibold text-lg">
-                    {context.admission.patient_name.split(' ').map(n=>n[0]).join('').slice(0,2)}
+                    {(context.admission.patient_name || 'U P').split(' ').map(n=>n?.[0]||'').join('').slice(0,2)}
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold text-slate-100">{context.admission.patient_name}</h2>
@@ -346,7 +350,7 @@ export default function Doctor() {
             </div>
 
             {/* Latest vitals strip */}
-            {context.vitals.length > 0 && (() => {
+            {(context.vitals || []).length > 0 && (() => {
               const v = context.vitals[0];
               return (
                 <div className="grid grid-cols-5 gap-3 mb-5">
@@ -381,7 +385,7 @@ export default function Doctor() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="card">
                   <p className="section-title">Recent Vitals</p>
-                  {context.vitals.slice(0,3).map((v,i) => (
+                  {(context.vitals || []).slice(0,3).map((v,i) => (
                     <div key={i} className="text-xs text-slate-500 border-b border-slate-800 py-2 last:border-0">
                       <span className="text-slate-400">{formatDateTime(v.recorded_at)}</span>
                       {v.systolic_bp && <span className="ml-2">BP {v.systolic_bp}/{v.diastolic_bp}</span>}
@@ -389,11 +393,11 @@ export default function Doctor() {
                       {v.spo2 && <span className="ml-2">SpO₂ {v.spo2}%</span>}
                     </div>
                   ))}
-                  {context.vitals.length === 0 && <p className="text-xs text-slate-600">No vitals yet</p>}
+                  {(context.vitals || []).length === 0 && <p className="text-xs text-slate-600">No vitals yet</p>}
                 </div>
                 <div className="card">
                   <p className="section-title">Recent Notes</p>
-                  {context.notes.slice(0,3).map((n,i) => (
+                  {(context.notes || []).slice(0,3).map((n,i) => (
                     <div key={i} className="text-xs border-b border-slate-800 py-2 last:border-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="badge badge-cyan capitalize">{n.note_type}</span>
@@ -402,15 +406,15 @@ export default function Doctor() {
                       <p className="text-slate-400 line-clamp-2">{n.note_content}</p>
                     </div>
                   ))}
-                  {context.notes.length === 0 && <p className="text-xs text-slate-600">No notes yet</p>}
+                  {(context.notes || []).length === 0 && <p className="text-xs text-slate-600">No notes yet</p>}
                 </div>
               </div>
             )}
 
             {detailTab === 'orders' && (
               <div className="space-y-3">
-                {context.orders.length === 0 ? <EmptyState icon={ClipboardList} message="No orders placed yet" /> :
-                  context.orders.map((o, i) => (
+                {(context.orders || []).length === 0 ? <EmptyState icon={ClipboardList} message="No orders placed yet" /> :
+                  (context.orders || []).map((o, i) => (
                     <div key={o.order_id || i} className="card-sm flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -431,8 +435,8 @@ export default function Doctor() {
 
             {detailTab === 'labs' && (
               <div className="space-y-4">
-                {context.labs.length === 0 ? <EmptyState icon={FlaskConical} message="No lab orders yet" /> :
-                  context.labs.map((l, i) => (
+                {(context.labs || []).length === 0 ? <EmptyState icon={FlaskConical} message="No lab orders yet" /> :
+                  (context.labs || []).map((l, i) => (
                     <div key={i} className="card-sm">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -442,7 +446,7 @@ export default function Doctor() {
                         <span className={`badge ${l.order_status === 'resulted' ? 'badge-green' : 'badge-yellow'} capitalize`}>{l.order_status}</span>
                       </div>
                       <div className="space-y-2">
-                        {l.tests?.map((t, j) => (
+                        {(l.tests || []).filter(t => t && t.test_name).map((t, j) => (
                           <div key={j} className="flex items-center justify-between text-sm bg-slate-800 rounded px-3 py-2">
                             <span className="text-slate-300">{t.test_name}</span>
                             <div className="flex items-center gap-2">
@@ -465,8 +469,8 @@ export default function Doctor() {
 
             {detailTab === 'notes' && (
               <div className="space-y-3">
-                {context.notes.length === 0 ? <EmptyState icon={ClipboardList} message="No notes yet" /> :
-                  context.notes.map((n, i) => (
+                {(context.notes || []).length === 0 ? <EmptyState icon={ClipboardList} message="No notes yet" /> :
+                  (context.notes || []).map((n, i) => (
                     <div key={i} className="card-sm">
                       <div className="flex items-center justify-between mb-2">
                         <span className="badge badge-cyan capitalize">{n.note_type}</span>
