@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
+import { sendADTMessage } from '../services/fhir-messaging.js';
 
 const router = Router();
 
@@ -129,6 +130,15 @@ router.post('/admit', async (req, res, next) => {
     );
 
     await client.query('COMMIT');
+
+    // FHIR: Generate and log ADT_A01 (Admit) message
+    try {
+      await sendADTMessage(null, admission.admission_id, 'ADMIT', performed_by || admitting_provider_id);
+    } catch (fhirErr) {
+      console.error('[FHIR] Failed to generate ADT_A01:', fhirErr.message);
+      // Non-blocking — admission succeeded, FHIR logging is best-effort
+    }
+
     res.status(201).json(admission);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -187,6 +197,14 @@ router.post('/discharge', async (req, res, next) => {
     );
 
     await client.query('COMMIT');
+
+    // FHIR: Generate and log ADT_A03 (Discharge) message
+    try {
+      await sendADTMessage(null, admission_id, 'DISCHARGE', performed_by || discharging_provider_id);
+    } catch (fhirErr) {
+      console.error('[FHIR] Failed to generate ADT_A03:', fhirErr.message);
+    }
+
     res.json({ message: 'Patient discharged successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -246,6 +264,14 @@ router.post('/transfer', async (req, res, next) => {
     );
 
     await client.query('COMMIT');
+
+    // FHIR: Generate and log ADT_A02 (Transfer) message
+    try {
+      await sendADTMessage(null, admission_id, 'TRANSFER', ordered_by);
+    } catch (fhirErr) {
+      console.error('[FHIR] Failed to generate ADT_A02:', fhirErr.message);
+    }
+
     res.status(201).json({ message: 'Internal transfer completed', transfer });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -297,6 +323,14 @@ router.post('/external-transfer', async (req, res, next) => {
     );
 
     await client.query('COMMIT');
+
+    // FHIR: Generate and log ADT_A02 (Transfer) message with external destination
+    try {
+      await sendADTMessage(null, admission_id, 'TRANSFER', ordered_by, to_facility_name);
+    } catch (fhirErr) {
+      console.error('[FHIR] Failed to generate ADT_A02 (external):', fhirErr.message);
+    }
+
     res.status(201).json({ message: `External transfer to ${to_facility_name} completed`, transfer });
   } catch (err) {
     await client.query('ROLLBACK');

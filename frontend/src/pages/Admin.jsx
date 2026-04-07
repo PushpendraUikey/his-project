@@ -162,10 +162,10 @@ function CreateUserModal({ isOpen, onClose, onSuccess }) {
 
   return (
     <Modal
-      isOpen={isOpen}
+      open={isOpen}
       onClose={onClose}
       title="Create New User"
-      size="lg"
+      width="max-w-2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <ErrorBanner message={error} />}
@@ -318,7 +318,7 @@ function ResetPasswordModal({ isOpen, onClose, provider, onSuccess }) {
     setLoading(true)
     setError('')
     try {
-      await api.resetPassword(provider.id, { password: tempPassword })
+      await api.resetPassword(provider.provider_id, { password: tempPassword })
       onSuccess()
       setTimeout(() => onClose(), 2000)
     } catch (err) {
@@ -336,10 +336,10 @@ function ResetPasswordModal({ isOpen, onClose, provider, onSuccess }) {
 
   return (
     <Modal
-      isOpen={isOpen}
+      open={isOpen}
       onClose={onClose}
       title="Reset Password"
-      size="sm"
+      width="max-w-md"
     >
       <div className="space-y-4">
         {error && <ErrorBanner message={error} />}
@@ -402,10 +402,10 @@ function ResetPasswordModal({ isOpen, onClose, provider, onSuccess }) {
 function DeactivateConfirmModal({ isOpen, onClose, provider, onConfirm, loading }) {
   return (
     <Modal
-      isOpen={isOpen}
+      open={isOpen}
       onClose={onClose}
       title="Deactivate User"
-      size="sm"
+      width="max-w-md"
     >
       <div className="space-y-4">
         <div className="flex items-start space-x-3 bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
@@ -465,7 +465,7 @@ function UserManagementTab() {
         is_active: statusFilter ? statusFilter === 'active' : undefined,
         q: searchQuery || undefined,
       })
-      setProviders(data)
+      setProviders(data.providers || [])
     } catch (err) {
       setError(err.message || 'Failed to load providers')
     } finally {
@@ -480,7 +480,7 @@ function UserManagementTab() {
   const handleActivate = async (provider) => {
     setActionLoading(true)
     try {
-      await api.activateProvider(provider.id)
+      await api.activateProvider(provider.provider_id)
       fetchProviders()
     } catch (err) {
       setError(err.message || 'Failed to activate provider')
@@ -596,7 +596,7 @@ function UserManagementTab() {
             </thead>
             <tbody>
               {providers.map((provider) => (
-                <tr key={provider.id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
+                <tr key={provider.provider_id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3 text-sm font-mono text-slate-400">
                     {provider.provider_code}
                   </td>
@@ -711,8 +711,8 @@ function HIELogsTab() {
         }),
         api.getAdminHIEStats(),
       ])
-      setLogs(logsData)
-      setStats(statsData)
+      setLogs(logsData.logs || [])
+      setStats(statsData || {})
     } catch (err) {
       setError(err.message || 'Failed to load HIE logs')
     } finally {
@@ -803,7 +803,7 @@ function HIELogsTab() {
             </thead>
             <tbody>
               {logs.map((log) => (
-                <tr key={log.id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
+                <tr key={log.log_id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3 text-sm font-mono text-slate-400">
                     {log.message_id ? log.message_id.substring(0, 12) + '...' : '-'}
                   </td>
@@ -817,7 +817,7 @@ function HIELogsTab() {
                     {log.patient_name || '-'}
                   </td>
                   <td className="px-4 py-3 text-sm font-mono text-slate-400">
-                    {log.patient_mrn || '-'}
+                    {log.mrn || '-'}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <span
@@ -833,7 +833,7 @@ function HIELogsTab() {
                   <td className="px-4 py-3 text-sm">
                     <span
                       className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                        log.status === 'success'
+                        log.status === 'sent' || log.status === 'received'
                           ? 'bg-green-500/20 text-green-400'
                           : 'bg-red-500/20 text-red-400'
                       }`}
@@ -842,7 +842,7 @@ function HIELogsTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-400">
-                    {formatDateTime(log.created_at)}
+                    {formatDateTime(log.sent_at)}
                   </td>
                 </tr>
               ))}
@@ -862,15 +862,13 @@ function AuditTrailTab() {
   const [actionFilter, setActionFilter] = useState('')
 
   const actionTypes = [
-    'login',
-    'logout',
-    'create_patient',
-    'update_patient',
-    'view_patient',
-    'create_order',
-    'cancel_order',
-    'update_order',
-    'view_order',
+    'USER_CREATED',
+    'PASSWORD_CHANGED',
+    'ACTIVATE',
+    'DEACTIVATE',
+    'RESET_PASSWORD',
+    'CHANGE_PASSWORD',
+    'UPDATE_ROLE',
   ]
 
   const fetchAuditLogs = useCallback(async () => {
@@ -881,7 +879,7 @@ function AuditTrailTab() {
         action: actionFilter || undefined,
         limit: 100,
       })
-      setAuditLogs(data)
+      setAuditLogs(data.auditLog || [])
     } catch (err) {
       setError(err.message || 'Failed to load audit logs')
     } finally {
@@ -894,17 +892,17 @@ function AuditTrailTab() {
   }, [fetchAuditLogs])
 
   const getActionColor = (action) => {
-    if (action.includes('create') || action.includes('login')) {
+    if (action === 'USER_CREATED' || action === 'ACTIVATE') {
       return 'bg-green-500/20 text-green-400'
     }
-    if (action.includes('delete') || action.includes('cancel')) {
+    if (action === 'DEACTIVATE') {
       return 'bg-red-500/20 text-red-400'
     }
-    if (action.includes('update')) {
+    if (action === 'PASSWORD_CHANGED' || action === 'CHANGE_PASSWORD' || action === 'RESET_PASSWORD') {
       return 'bg-blue-500/20 text-blue-400'
     }
-    if (action.includes('view')) {
-      return 'bg-slate-500/20 text-slate-400'
+    if (action === 'UPDATE_ROLE') {
+      return 'bg-amber-500/20 text-amber-400'
     }
     return 'bg-slate-600/20 text-slate-300'
   }
@@ -956,7 +954,7 @@ function AuditTrailTab() {
             </thead>
             <tbody>
               {auditLogs.map((log) => (
-                <tr key={log.id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
+                <tr key={log.audit_id} className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3 text-sm text-slate-400">
                     {formatDateTime(log.created_at)}
                   </td>

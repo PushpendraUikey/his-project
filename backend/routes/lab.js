@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
+import { sendLabResultMessage } from '../services/fhir-messaging.js';
 
 const router = Router();
 
@@ -95,14 +96,24 @@ router.post('/results', async (req, res, next) => {
          WHERE lab_order_id=$1`,
         [lab_order_id]
       );
+
+      await client.query('COMMIT');
+
+      // FHIR: All tests complete — generate ORU_R01 (Lab Result) message
+      try {
+        await sendLabResultMessage(null, lab_order_id, validated_by);
+      } catch (fhirErr) {
+        console.error('[FHIR] Failed to generate ORU_R01:', fhirErr.message);
+      }
     } else {
       await client.query(
         `UPDATE lab_orders SET order_status='processing', updated_at=NOW() WHERE lab_order_id=$1`,
         [lab_order_id]
       );
+
+      await client.query('COMMIT');
     }
 
-    await client.query('COMMIT');
     res.status(201).json(result);
   } catch (err) {
     await client.query('ROLLBACK');

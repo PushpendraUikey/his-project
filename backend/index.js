@@ -10,6 +10,7 @@ import labRoutes           from './routes/lab.js';
 import authRoutes          from './routes/auth.js';
 import hieRoutes           from './routes/hie.js';
 import adminRoutes         from './routes/admin.js';
+import { authenticateToken, requireRole } from './routes/auth.js';
 
 dotenv.config();
 const app = express();
@@ -25,7 +26,7 @@ app.use('/api/doctor',       doctorRoutes);
 app.use('/api/lab',          labRoutes);
 app.use('/api/auth',         authRoutes);
 app.use('/api/hie',          hieRoutes);
-app.use('/api/admin',        adminRoutes);
+app.use('/api/admin',        authenticateToken, requireRole(['admin']), adminRoutes);
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '3.0.0' }));

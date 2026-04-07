@@ -36,7 +36,7 @@ router.get('/providers', async (req, res) => {
 
     // Search by name or code
     if (q) {
-      query += ` AND (full_name ILIKE $${params.length + 1} OR provider_code ILIKE $${params.length + 1})`;
+      query += ` AND (full_name ILIKE $${params.length + 1} OR provider_code ILIKE $${params.length + 2})`;
       params.push(`%${q}%`);
       params.push(`%${q}%`);
     }
@@ -258,8 +258,8 @@ router.get('/hie-logs', async (req, res) => {
       SELECT
         hl.log_id, hl.message_id, hl.message_type, hl.event_type,
         hl.direction, hl.status, hl.destination, hl.source_system, hl.sent_at,
-        p.patient_id, p.mrn, p.full_name AS patient_name
-      FROM hie_logs hl
+        p.patient_id, p.mrn, p.first_name || ' ' || p.last_name AS patient_name
+      FROM hie_message_log hl
       LEFT JOIN patients p ON hl.patient_id = p.patient_id
       WHERE 1=1
     `;
@@ -304,32 +304,19 @@ router.get('/hie-logs', async (req, res) => {
  */
 router.get('/hie-logs/stats', async (req, res) => {
   try {
-    const messageTypeResult = await pool.query(
-      `SELECT message_type, COUNT(*) as count
-       FROM hie_logs
-       GROUP BY message_type
-       ORDER BY count DESC`
-    );
-
-    const directionResult = await pool.query(
-      `SELECT direction, COUNT(*) as count
-       FROM hie_logs
-       GROUP BY direction
-       ORDER BY count DESC`
-    );
-
-    const statusResult = await pool.query(
-      `SELECT status, COUNT(*) as count
-       FROM hie_logs
-       GROUP BY status
-       ORDER BY count DESC`
-    );
-
-    res.json({
-      byMessageType: messageTypeResult.rows,
-      byDirection: directionResult.rows,
-      byStatus: statusResult.rows
-    });
+    const result = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE message_type='ADT_A01') AS "ADT_A01",
+        COUNT(*) FILTER (WHERE message_type='ADT_A02') AS "ADT_A02",
+        COUNT(*) FILTER (WHERE message_type='ADT_A03') AS "ADT_A03",
+        COUNT(*) FILTER (WHERE message_type='ORU_R01') AS "ORU_R01",
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE direction='outbound') AS outbound,
+        COUNT(*) FILTER (WHERE direction='inbound') AS inbound,
+        COUNT(*) FILTER (WHERE status='error') AS errors
+      FROM hie_message_log
+    `);
+    res.json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching HIE statistics:', error);
     res.status(500).json({ error: 'Failed to fetch HIE statistics' });
@@ -347,26 +334,30 @@ router.get('/audit-log', async (req, res) => {
 
     let query = `
       SELECT
-        audit_id, provider_id, action, details, performed_by, created_at
-      FROM provider_audit_log
+        pal.audit_id, pal.provider_id, pal.action, pal.details, pal.performed_by, pal.created_at,
+        p1.full_name AS provider_name,
+        p2.full_name AS performed_by_name
+      FROM provider_audit_log pal
+      LEFT JOIN providers p1 ON p1.provider_id = pal.provider_id
+      LEFT JOIN providers p2 ON p2.provider_id = pal.performed_by
       WHERE 1=1
     `;
     const params = [];
 
     // Filter by provider_id
     if (provider_id) {
-      query += ` AND provider_id = $${params.length + 1}`;
+      query += ` AND pal.provider_id = $${params.length + 1}`;
       params.push(provider_id);
     }
 
     // Filter by action
     if (action) {
-      query += ` AND action = $${params.length + 1}`;
+      query += ` AND pal.action = $${params.length + 1}`;
       params.push(action);
     }
 
     // Order by created_at DESC
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY pal.created_at DESC`;
 
     // Limit
     query += ` LIMIT $${params.length + 1}`;
